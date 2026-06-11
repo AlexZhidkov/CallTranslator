@@ -1,0 +1,7 @@
+dist
+node_modules
+.git
+.firebase
+.env
+*.local
+npm-debug.log*

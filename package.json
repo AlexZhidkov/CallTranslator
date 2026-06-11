@@ -5,14 +5,26 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "node --watch server/index.js",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server/index.js",
+    "test:server": "node --test server/*.test.js",
+    "check": "npm run lint && npm run test:server && npm run build"
   },
   "dependencies": {
+    "@livekit/rtc-node": "^0.13.29",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "firebase": "^12.14.0",
+    "livekit-client": "^2.19.2",
+    "livekit-server-sdk": "^2.15.4",
+    "lucide-react": "^1.17.0",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "uuid": "^14.0.0",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
