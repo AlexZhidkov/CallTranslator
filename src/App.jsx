@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   Headphones,
+  KeyRound,
   Link as LinkIcon,
   Lock,
   Mic,
@@ -11,6 +12,7 @@ import {
   PhoneOff,
   Radio,
   Users,
+  Volume2,
 } from 'lucide-react'
 import { Room, RoomEvent, Track } from 'livekit-client'
 import './App.css'
@@ -46,21 +48,52 @@ const AUDIO_CAPTURE_OPTIONS = {
   autoGainControl: true,
 }
 
+const PIN_STORAGE_KEY = 'call-translator-pin'
+
+function getStoredPin() {
+  try {
+    return window.localStorage.getItem(PIN_STORAGE_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+function storePin(pin) {
+  try {
+    window.localStorage.setItem(PIN_STORAGE_KEY, pin)
+  } catch {
+    // Ignore storage errors; the PIN will be asked for again next visit.
+  }
+}
+
+function clearStoredPin() {
+  try {
+    window.localStorage.removeItem(PIN_STORAGE_KEY)
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
 function getRoomIdFromUrl() {
   return new URLSearchParams(window.location.search).get('room') || ''
 }
 
 async function apiFetch(path, options = {}) {
+  const pin = getStoredPin()
   const response = await fetch(path, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(pin ? { 'X-App-Pin': pin } : {}),
       ...(options.headers || {}),
     },
   })
   const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
+    if (response.status === 401) {
+      window.dispatchEvent(new Event('app-pin-rejected'))
+    }
     const error = new Error(data.error || `Request failed: ${response.status}`)
     error.status = response.status
     error.data = data
@@ -87,6 +120,10 @@ function App() {
   const [transcripts, setTranscripts] = useState([])
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
+  const [canPlayAudio, setCanPlayAudio] = useState(true)
+  const [accessState, setAccessState] = useState('checking')
+  const [pinInput, setPinInput] = useState('')
+  const [pinError, setPinError] = useState('')
 
   const roomRef = useRef(null)
   const participantRef = useRef(null)
@@ -120,7 +157,40 @@ function App() {
   }, [participant])
 
   useEffect(() => {
-    if (!roomId) return undefined
+    let cancelled = false
+
+    const checkAccess = async () => {
+      try {
+        await apiFetch('/api/pin/verify', { method: 'POST' })
+        if (!cancelled) setAccessState('unlocked')
+      } catch (requestError) {
+        if (cancelled) return
+        setAccessState('locked')
+        if (requestError.status !== 401) {
+          setPinError(requestError.message)
+        }
+      }
+    }
+
+    checkAccess()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const handlePinRejected = () => {
+      clearStoredPin()
+      setAccessState('locked')
+    }
+
+    window.addEventListener('app-pin-rejected', handlePinRejected)
+    return () =>
+      window.removeEventListener('app-pin-rejected', handlePinRejected)
+  }, [])
+
+  useEffect(() => {
+    if (!roomId || accessState !== 'unlocked') return undefined
 
     let cancelled = false
     const loadRoom = async () => {
@@ -142,7 +212,7 @@ function App() {
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [roomId])
+  }, [roomId, accessState])
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -152,9 +222,16 @@ function App() {
 
       navigator.sendBeacon(
         `/api/rooms/${currentRoomId}/leave`,
-        new Blob([JSON.stringify({ identity: currentParticipant.identity })], {
-          type: 'application/json',
-        }),
+        new Blob(
+          [
+            JSON.stringify({
+              identity: currentParticipant.identity,
+              // sendBeacon cannot set headers, so the PIN goes in the body.
+              pin: getStoredPin(),
+            }),
+          ],
+          { type: 'application/json' },
+        ),
       )
     }
 
@@ -168,6 +245,29 @@ function App() {
     setActiveTurn(null)
     roomRef.current?.localParticipant?.setMicrophoneEnabled(false)
   }, [floor, participant])
+
+  async function submitPin(event) {
+    event.preventDefault()
+
+    const pin = pinInput.trim()
+    if (!pin) return
+
+    setPinError('')
+    storePin(pin)
+
+    try {
+      await apiFetch('/api/pin/verify', { method: 'POST' })
+      setAccessState('unlocked')
+      setPinInput('')
+    } catch (requestError) {
+      clearStoredPin()
+      setPinError(
+        requestError.status === 401
+          ? 'Incorrect PIN / Неверный ПИН-код'
+          : requestError.message,
+      )
+    }
+  }
 
   async function createRoom() {
     setError('')
@@ -194,7 +294,7 @@ function App() {
     window.setTimeout(() => setCopied(false), 1600)
   }
 
-  function attachTranslatedTrack(track, remoteParticipant) {
+  function attachTranslatedTrack(track, publication, remoteParticipant) {
     const sideConfig = SIDE_OPTIONS[sideRef.current]
     if (
       track.kind !== Track.Kind.Audio ||
@@ -262,6 +362,9 @@ function App() {
         track.detach().forEach((element) => element.remove())
       })
       livekitRoom.on(RoomEvent.DataReceived, handleDataReceived)
+      livekitRoom.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        setCanPlayAudio(livekitRoom.canPlaybackAudio)
+      })
       livekitRoom.on(RoomEvent.Disconnected, () => {
         setConnectionState('disconnected')
       })
@@ -270,6 +373,8 @@ function App() {
         autoSubscribe: true,
       })
 
+      await livekitRoom.startAudio().catch(() => {})
+
       roomRef.current = livekitRoom
       setParticipant(tokenData.participant)
       setRoomInfo(tokenData.room)
@@ -277,6 +382,14 @@ function App() {
     } catch (requestError) {
       setConnectionState('idle')
       setError(requestError.message)
+    }
+  }
+
+  async function enableAudioPlayback() {
+    try {
+      await roomRef.current?.startAudio()
+    } catch (playError) {
+      console.warn('Audio playback is still blocked', playError)
     }
   }
 
@@ -370,6 +483,7 @@ function App() {
     setConnectionState('idle')
     setTranscripts([])
     setActiveTurn(null)
+    setCanPlayAudio(true)
   }
 
   async function handleSpeakButton() {
@@ -394,9 +508,45 @@ function App() {
         </div>
       </section>
 
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error && accessState === 'unlocked' ? (
+        <div className="error-banner">{error}</div>
+      ) : null}
 
-      {!roomId ? (
+      {accessState !== 'unlocked' ? (
+        accessState === 'checking' ? null : (
+          <section className="pin-panel" aria-label="PIN entry">
+            <div>
+              <h2>Enter PIN / Введите ПИН-код</h2>
+              <p>
+                This call translator is private. Ask your family for the PIN
+                code. / Этот переводчик — для своих. Спросите ПИН-код у семьи.
+              </p>
+            </div>
+            <form onSubmit={submitPin}>
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                aria-label="PIN code / ПИН-код"
+                placeholder="••••"
+                value={pinInput}
+                onChange={(event) =>
+                  setPinInput(event.target.value.replace(/\D/g, ''))
+                }
+              />
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!pinInput.trim()}
+              >
+                <KeyRound size={22} />
+                Unlock / Открыть
+              </button>
+            </form>
+            {pinError ? <p className="pin-error">{pinError}</p> : null}
+          </section>
+        )
+      ) : !roomId ? (
         <section className="start-panel">
           <div>
             <h2>Create a call / Создать звонок</h2>
@@ -473,6 +623,16 @@ function App() {
             </section>
           ) : (
             <section className="call-surface" aria-label="Call controls">
+              {!canPlayAudio ? (
+                <button
+                  type="button"
+                  className="primary-action enable-audio"
+                  onClick={enableAudioPlayback}
+                >
+                  <Volume2 size={22} />
+                  Tap to enable sound / Включить звук
+                </button>
+              ) : null}
               <div className="status-board">
                 <div>
                   <span className="label">You are / Вы</span>

@@ -7,6 +7,10 @@ import { RoomStore } from './room-store.js'
 const port = Number(process.env.PORT || 8080)
 const roomStore = new RoomStore()
 
+if (!process.env.APP_PIN) {
+  console.warn('[server] APP_PIN is not set — the API is open to anyone.')
+}
+
 let bridgeManager = null
 try {
   bridgeManager = new BridgeManager({

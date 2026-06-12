@@ -32,10 +32,13 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your-livekit-api-key
 LIVEKIT_API_SECRET=your-livekit-api-secret
 GEMINI_API_KEY=your-gemini-api-key
+APP_PIN=123456
 PORT=8080
 ```
 
 Never expose these values in the browser. The React app gets LiveKit room tokens from the backend.
+
+`APP_PIN` is a numeric PIN required to use the app. Every `/api/**` request (except `/api/health`) must include it, so users see a PIN screen before anything else. Repeated wrong attempts are rate-limited per IP. If `APP_PIN` is unset, the PIN check is disabled and the API is open.
 
 ## Local Development
 
@@ -137,6 +140,12 @@ Build the frontend:
 npm run build
 ```
 
+Create the PIN secret once (pick your own digits):
+
+```bash
+printf '123456' | gcloud secrets create app-pin --data-file=-
+```
+
 Deploy the backend to Cloud Run with secrets:
 
 ```bash
@@ -149,7 +158,7 @@ gcloud run deploy call-translator-api \
   --timeout 3600 \
   --no-cpu-throttling \
   --set-env-vars LIVEKIT_URL=wss://your-project.livekit.cloud \
-  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,LIVEKIT_API_KEY=livekit-api-key:latest,LIVEKIT_API_SECRET=livekit-api-secret:latest
+  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,LIVEKIT_API_KEY=livekit-api-key:latest,LIVEKIT_API_SECRET=livekit-api-secret:latest,APP_PIN=app-pin:latest
 ```
 
 Deploy Firebase Hosting:
@@ -160,6 +169,6 @@ firebase deploy --only hosting
 
 ## Notes
 
-- This is an open prototype with obscure room URLs only; there is no PIN or sign-in.
+- Access requires the shared numeric `APP_PIN`; there is no per-user sign-in. The PIN is enforced server-side on every API request and remembered in the browser after the first entry.
 - Long calls depend on one Cloud Run process keeping LiveKit and Gemini WebSocket bridges alive.
 - Use headphones during testing to reduce echo and accidental translated feedback.

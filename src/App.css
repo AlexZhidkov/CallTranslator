@@ -10,7 +10,8 @@
 .join-panel,
 .call-surface,
 .transcript-panel,
-.start-panel {
+.start-panel,
+.pin-panel {
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow);
@@ -94,6 +95,38 @@
   align-items: center;
   justify-content: space-between;
   gap: 24px;
+}
+
+.pin-panel {
+  margin-top: 16px;
+  border-radius: 8px;
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.pin-panel p {
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+
+.pin-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pin-panel input {
+  width: 180px;
+  text-align: center;
+  font-size: 24px;
+  letter-spacing: 8px;
+}
+
+.pin-error {
+  color: var(--danger);
+  font-weight: 700;
+  margin: 0;
 }
 
 .start-panel p,

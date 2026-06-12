@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import express from 'express'
 import { BridgeManager } from './bridge-manager.js'
 import { getGeminiConfig, getLiveKitConfig } from './config.js'
@@ -14,16 +15,71 @@ function getOrigin(req) {
   return `${req.protocol}://${req.get('host')}`
 }
 
+function pinMatches(provided, expected) {
+  if (typeof provided !== 'string' || !provided) return false
+  const providedBuffer = Buffer.from(provided)
+  const expectedBuffer = Buffer.from(expected)
+  return (
+    providedBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(providedBuffer, expectedBuffer)
+  )
+}
+
+const PIN_FAILURE_WINDOW_MS = 5 * 60_000
+const PIN_MAX_FAILURES = 10
+
 export function createApp({
   roomStore = new RoomStore(),
   bridgeManager,
   livekitConfig,
+  appPin = process.env.APP_PIN,
 } = {}) {
   const app = express()
 
+  app.set('trust proxy', true)
   app.use(express.json({ limit: '1mb' }))
 
   app.get('/api/health', (req, res) => {
+    res.json({ ok: true })
+  })
+
+  const pinFailures = new Map()
+
+  app.use('/api', (req, res, next) => {
+    if (!appPin) {
+      next()
+      return
+    }
+
+    const now = Date.now()
+    const failures = pinFailures.get(req.ip)
+    if (failures && now - failures.firstAt > PIN_FAILURE_WINDOW_MS) {
+      pinFailures.delete(req.ip)
+    } else if (failures && failures.count >= PIN_MAX_FAILURES) {
+      res.status(429).json({
+        error:
+          'Too many incorrect PIN attempts. Try again later. / Слишком много неверных попыток. Попробуйте позже.',
+      })
+      return
+    }
+
+    // sendBeacon cannot set headers, so the PIN may arrive in the body.
+    const provided = req.get('x-app-pin') || req.body?.pin
+    if (pinMatches(provided, appPin)) {
+      next()
+      return
+    }
+
+    if (pinFailures.size > 10_000) {
+      pinFailures.clear()
+    }
+    const record = pinFailures.get(req.ip) || { count: 0, firstAt: now }
+    record.count += 1
+    pinFailures.set(req.ip, record)
+    res.status(401).json({ error: 'PIN required / Требуется ПИН-код' })
+  })
+
+  app.post('/api/pin/verify', (req, res) => {
     res.json({ ok: true })
   })
 
