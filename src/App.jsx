@@ -128,7 +128,6 @@ function App() {
         const data = await apiFetch(`/api/rooms/${roomId}`)
         if (!cancelled) {
           setRoomInfo(data.room)
-          setError('')
         }
       } catch (requestError) {
         if (!cancelled) {
