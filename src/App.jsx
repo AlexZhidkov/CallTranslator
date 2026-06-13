@@ -4,7 +4,6 @@ import {
   Copy,
   Headphones,
   KeyRound,
-  Link as LinkIcon,
   Lock,
   Mic,
   MicOff,
@@ -118,11 +117,6 @@ async function apiFetch(path, options = {}) {
   }
 
   return data;
-}
-
-function formatSpeakingParticipant(floor, participant) {
-  if (!floor) return "No one";
-  return floor.identity === participant?.identity ? "You" : "Someone else";
 }
 
 function App() {
@@ -597,10 +591,6 @@ function App() {
               {copied ? <Check size={20} /> : <Copy size={20} />}
               <span>{copied ? "Copied" : "Copy link"}</span>
             </button>
-            <a className="room-link" href={currentJoinUrl}>
-              <LinkIcon size={18} />
-              Open link
-            </a>
           </section>
 
           {!isJoined ? (
@@ -634,31 +624,6 @@ function App() {
                   Enable sound
                 </button>
               ) : null}
-              <div className="status-board">
-                <div>
-                  <span className="label">You</span>
-                  <strong>
-                    {`${selectedLanguage.name} (${getLanguageDisplayCode(
-                      selectedLanguage,
-                    )})`}
-                  </strong>
-                </div>
-                <div>
-                  <span className="label">Speaking</span>
-                  <strong>
-                    {formatSpeakingParticipant(floor, participant)}
-                  </strong>
-                </div>
-                <div>
-                  <span className="label">Listening in</span>
-                  <strong>
-                    {`${selectedLanguage.name} (${getLanguageDisplayCode(
-                      selectedLanguage,
-                    )})`}
-                  </strong>
-                </div>
-              </div>
-
               <button
                 type="button"
                 className={`talk-button ${isMyTurn ? "speaking" : ""}`}

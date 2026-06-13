@@ -244,34 +244,6 @@ button {
   gap: 18px;
 }
 
-.status-board {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.status-board > div {
-  min-height: 76px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  padding: 13px;
-}
-
-.status-board strong {
-  display: block;
-  margin-top: 4px;
-}
-
-.status-board small {
-  display: block;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
-  margin-top: 2px;
-}
-
 .talk-button {
   width: min(100%, 420px);
   min-height: 148px;
@@ -394,10 +366,6 @@ button {
   .room-link,
   .leave-button {
     width: 100%;
-  }
-
-  .status-board {
-    grid-template-columns: 1fr;
   }
 
   .talk-button {
