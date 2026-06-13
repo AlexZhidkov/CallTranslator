@@ -40,8 +40,8 @@ test('stores participant languages and targets the opposite side', () => {
     languageCode: 'es',
   })
 
-  assert.equal(parent.languageName, 'Russian')
-  assert.equal(grandchild.languageName, 'Spanish')
+  assert.equal(parent.languageName, 'Русский')
+  assert.equal(grandchild.languageName, 'Español')
 
   const turn = store.startTurn(room.roomId, {
     side: 'parents',
