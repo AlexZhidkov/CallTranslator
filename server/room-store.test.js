@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { RoomStore, SIDES } from './room-store.js'
+import { resolveSupportedLanguageCode } from '../shared/supported-languages.js'
 
 test('creates high-entropy rooms', () => {
   const store = new RoomStore()
@@ -11,11 +12,46 @@ test('creates high-entropy rooms', () => {
   assert.deepEqual(room.floor, null)
 })
 
-test('maps each side to the expected target language', () => {
-  assert.equal(SIDES.parents.targetLanguage, 'en')
-  assert.equal(SIDES.grandchildren.targetLanguage, 'ru')
-  assert.equal(SIDES.parents.listenTranslator, 'translator-ru')
-  assert.equal(SIDES.grandchildren.listenTranslator, 'translator-en')
+test('keeps the two family sides as room roles', () => {
+  assert.equal(SIDES.parents.label, 'Parents')
+  assert.equal(SIDES.grandchildren.label, 'Grandchildren')
+})
+
+test('resolves browser locales to supported language codes', () => {
+  assert.equal(resolveSupportedLanguageCode(['fr-CA']), 'fr')
+  assert.equal(resolveSupportedLanguageCode(['nb-NO']), 'no')
+  assert.equal(resolveSupportedLanguageCode(['zh-TW']), 'zh-Hant')
+  assert.equal(resolveSupportedLanguageCode(['pt-PT']), 'pt-PT')
+  assert.equal(resolveSupportedLanguageCode(['not-a-language']), 'en')
+})
+
+test('stores participant languages and targets the opposite side', () => {
+  const store = new RoomStore()
+  const room = store.createRoom()
+
+  const parent = store.addParticipant(room.roomId, {
+    side: 'parents',
+    identity: 'parents-1',
+    languageCode: 'ru',
+  })
+  const grandchild = store.addParticipant(room.roomId, {
+    side: 'grandchildren',
+    identity: 'grandchildren-1',
+    languageCode: 'es',
+  })
+
+  assert.equal(parent.languageName, 'Russian')
+  assert.equal(grandchild.languageName, 'Spanish')
+
+  const turn = store.startTurn(room.roomId, {
+    side: 'parents',
+    identity: parent.identity,
+  })
+
+  assert.equal(turn.granted, true)
+  assert.deepEqual(turn.floor.targetLanguages, ['es'])
+  assert.equal(turn.floor.translatorIdentity, 'translator-es')
+  assert.deepEqual(turn.floor.translatorIdentities, ['translator-es'])
 })
 
 test('denies a second floor claim while a turn is active', () => {

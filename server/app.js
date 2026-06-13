@@ -1,8 +1,12 @@
 import { timingSafeEqual } from 'node:crypto'
 import express from 'express'
+import {
+  DEFAULT_LANGUAGE_CODE,
+  getSupportedLanguageByCode,
+} from '../shared/supported-languages.js'
 import { BridgeManager } from './bridge-manager.js'
 import { getGeminiConfig, getLiveKitConfig } from './config.js'
-import { RoomStore, SIDES } from './room-store.js'
+import { RoomStore } from './room-store.js'
 import { createParticipantToken } from './token-service.js'
 
 function asyncRoute(handler) {
@@ -23,6 +27,20 @@ function pinMatches(provided, expected) {
     providedBuffer.length === expectedBuffer.length &&
     timingSafeEqual(providedBuffer, expectedBuffer)
   )
+}
+
+function requireSupportedLanguage(languageCode) {
+  const language = getSupportedLanguageByCode(
+    languageCode || DEFAULT_LANGUAGE_CODE,
+  )
+
+  if (!language) {
+    const error = new Error('Invalid language')
+    error.statusCode = 400
+    throw error
+  }
+
+  return language
 }
 
 const PIN_FAILURE_WINDOW_MS = 5 * 60_000
@@ -105,8 +123,9 @@ export function createApp({
   app.post(
     '/api/rooms/:roomId/token',
     asyncRoute(async (req, res) => {
-      const { side, displayName } = req.body || {}
+      const { side, displayName, languageCode } = req.body || {}
       const room = roomStore.requireRoom(req.params.roomId)
+      const language = requireSupportedLanguage(languageCode)
       const config = livekitConfig || getLiveKitConfig()
       const token = await createParticipantToken({
         roomId: room.roomId,
@@ -119,6 +138,7 @@ export function createApp({
         side,
         identity: token.identity,
         displayName,
+        languageCode: language.code,
       })
 
       res.json({
@@ -153,23 +173,29 @@ export function createApp({
         return
       }
 
-      const manager =
-        bridgeManager ||
-        new BridgeManager({
-          livekitConfig: getLiveKitConfig(),
-          geminiConfig: getGeminiConfig(),
-        })
+      let manager = bridgeManager
+      if (result.floor.targetLanguages.length) {
+        manager =
+          bridgeManager ||
+          new BridgeManager({
+            livekitConfig: getLiveKitConfig(),
+            geminiConfig: getGeminiConfig(),
+          })
 
-      await manager.startTurn({
-        roomId: room.roomId,
-        sourceIdentity: identity,
-        targetLanguage: SIDES[side].targetLanguage,
-      })
+        await manager.startTurn({
+          roomId: room.roomId,
+          sourceIdentity: identity,
+          targetLanguages: result.floor.targetLanguages,
+        })
+      }
 
       res.json({
         granted: true,
         floor: result.floor,
-        room: roomStore.toPublicRoom(room, manager.getStatuses(room.roomId)),
+        room: roomStore.toPublicRoom(
+          room,
+          manager?.getStatuses(room.roomId),
+        ),
       })
     }),
   )
@@ -182,7 +208,7 @@ export function createApp({
     if (result.ended) {
       bridgeManager?.endTurn({
         roomId: room.roomId,
-        targetLanguage: result.floor.targetLanguage,
+        targetLanguages: result.floor.targetLanguages,
       })
     }
 

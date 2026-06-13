@@ -97,6 +97,17 @@
   gap: 24px;
 }
 
+.start-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.start-copy .language-select {
+  max-width: 340px;
+}
+
 .pin-panel {
   margin-top: 16px;
   border-radius: 8px;
@@ -199,7 +210,7 @@
 
 .join-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px) auto;
   gap: 16px;
   align-items: end;
 }
@@ -211,7 +222,12 @@ label {
   font-weight: 700;
 }
 
-input {
+.language-select {
+  min-width: 220px;
+}
+
+input,
+select {
   min-height: 48px;
   border-radius: 7px;
   border: 1px solid var(--border);
@@ -222,10 +238,15 @@ input {
 }
 
 input:focus,
+select:focus,
 button:focus-visible,
 a:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+}
+
+select:disabled {
+  opacity: 0.7;
 }
 
 button,
@@ -295,6 +316,14 @@ button {
 .status-board strong {
   display: block;
   margin-top: 4px;
+}
+
+.status-board small {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 2px;
 }
 
 .talk-button {

@@ -1,21 +1,19 @@
 import { randomBytes } from 'node:crypto'
+import {
+  DEFAULT_LANGUAGE_CODE,
+  getSupportedLanguageByCode,
+} from '../shared/supported-languages.js'
 
 export const SIDES = {
   parents: {
     id: 'parents',
     label: 'Parents',
     labelRu: 'Родители',
-    sourceLanguage: 'ru',
-    targetLanguage: 'en',
-    listenTranslator: 'translator-ru',
   },
   grandchildren: {
     id: 'grandchildren',
     label: 'Grandchildren',
     labelRu: 'Внуки',
-    sourceLanguage: 'en',
-    targetLanguage: 'ru',
-    listenTranslator: 'translator-en',
   },
 }
 
@@ -25,11 +23,51 @@ export function createId(byteLength = 12) {
   return randomBytes(byteLength).toString('base64url')
 }
 
-function createParticipant(identity, side, displayName) {
+function requireSide(side) {
+  if (!SIDES[side]) {
+    const error = new Error('Invalid side')
+    error.statusCode = 400
+    throw error
+  }
+}
+
+function requireSupportedParticipantLanguage(languageCode) {
+  const language = getSupportedLanguageByCode(
+    languageCode || DEFAULT_LANGUAGE_CODE,
+  )
+
+  if (!language) {
+    const error = new Error('Invalid language')
+    error.statusCode = 400
+    throw error
+  }
+
+  return language
+}
+
+function getTargetLanguagesForSide(room, speakingSide) {
+  const targetLanguages = new Set()
+
+  for (const [side, participants] of Object.entries(room.participants)) {
+    if (side === speakingSide) continue
+
+    for (const participant of participants.values()) {
+      targetLanguages.add(participant.languageCode)
+    }
+  }
+
+  return Array.from(targetLanguages)
+}
+
+function createParticipant(identity, side, displayName, languageCode) {
+  const language = requireSupportedParticipantLanguage(languageCode)
+
   return {
     identity,
     side,
     displayName: displayName || SIDES[side].label,
+    languageCode: language.code,
+    languageName: language.name,
     joinedAt: new Date().toISOString(),
     lastSeenAt: new Date().toISOString(),
   }
@@ -102,23 +140,27 @@ export class RoomStore {
     room.expiresAt = new Date(timestamp + this.ttlMs).toISOString()
   }
 
-  addParticipant(roomId, { side, identity, displayName }) {
-    if (!SIDES[side]) {
-      const error = new Error('Invalid side')
-      error.statusCode = 400
-      throw error
-    }
+  addParticipant(roomId, { side, identity, displayName, languageCode }) {
+    requireSide(side)
 
     const room = this.requireRoom(roomId)
+    const language = requireSupportedParticipantLanguage(languageCode)
     const existing = room.participants[side].get(identity)
     if (existing) {
       existing.lastSeenAt = new Date(this.now()).toISOString()
       if (displayName) existing.displayName = displayName
+      existing.languageCode = language.code
+      existing.languageName = language.name
       this.touch(room)
       return existing
     }
 
-    const participant = createParticipant(identity, side, displayName)
+    const participant = createParticipant(
+      identity,
+      side,
+      displayName,
+      language.code,
+    )
     room.participants[side].set(identity, participant)
     this.touch(room)
     return participant
@@ -141,11 +183,7 @@ export class RoomStore {
   }
 
   startTurn(roomId, { side, identity }) {
-    if (!SIDES[side]) {
-      const error = new Error('Invalid side')
-      error.statusCode = 400
-      throw error
-    }
+    requireSide(side)
 
     const room = this.requireRoom(roomId)
     if (room.floor) {
@@ -155,13 +193,19 @@ export class RoomStore {
       }
     }
 
-    const sideConfig = SIDES[side]
+    const targetLanguages = getTargetLanguagesForSide(room, side)
     room.floor = {
       turnId: createId(10),
       side,
       identity,
-      targetLanguage: sideConfig.targetLanguage,
-      translatorIdentity: `translator-${sideConfig.targetLanguage}`,
+      targetLanguage: targetLanguages[0] || null,
+      targetLanguages,
+      translatorIdentity: targetLanguages[0]
+        ? `translator-${targetLanguages[0]}`
+        : null,
+      translatorIdentities: targetLanguages.map(
+        (languageCode) => `translator-${languageCode}`,
+      ),
       startedAt: new Date(this.now()).toISOString(),
     }
     this.touch(room)

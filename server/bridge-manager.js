@@ -4,6 +4,16 @@ function bridgeKey(roomId, targetLanguage) {
   return `${roomId}:${targetLanguage}`
 }
 
+function normalizeTargetLanguages({ targetLanguage, targetLanguages }) {
+  return Array.from(
+    new Set(
+      (targetLanguages || [targetLanguage]).filter(
+        (languageCode) => typeof languageCode === 'string' && languageCode,
+      ),
+    ),
+  )
+}
+
 export class BridgeManager {
   constructor({ livekitConfig, geminiConfig }) {
     this.livekitConfig = livekitConfig
@@ -28,7 +38,24 @@ export class BridgeManager {
     return statuses
   }
 
-  async startTurn({ roomId, sourceIdentity, targetLanguage }) {
+  async startTurn({ roomId, sourceIdentity, targetLanguage, targetLanguages }) {
+    const languages = normalizeTargetLanguages({
+      targetLanguage,
+      targetLanguages,
+    })
+
+    return Promise.all(
+      languages.map((languageCode) =>
+        this.startSingleBridge({
+          roomId,
+          sourceIdentity,
+          targetLanguage: languageCode,
+        }),
+      ),
+    )
+  }
+
+  async startSingleBridge({ roomId, sourceIdentity, targetLanguage }) {
     const key = bridgeKey(roomId, targetLanguage)
     const existing = this.bridges.get(key)
 
@@ -64,9 +91,16 @@ export class BridgeManager {
     }
   }
 
-  endTurn({ roomId, targetLanguage }) {
-    const bridge = this.bridges.get(bridgeKey(roomId, targetLanguage))
-    bridge?.sendAudioStreamEnd()
+  endTurn({ roomId, targetLanguage, targetLanguages }) {
+    const languages = normalizeTargetLanguages({
+      targetLanguage,
+      targetLanguages,
+    })
+
+    for (const languageCode of languages) {
+      const bridge = this.bridges.get(bridgeKey(roomId, languageCode))
+      bridge?.sendAudioStreamEnd()
+    }
   }
 
   async stopRoom(roomId) {

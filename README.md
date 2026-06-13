@@ -1,11 +1,11 @@
 # Call Translator
 
-Audio-only Russian-English family call translator built with React, LiveKit Cloud, and Gemini Live Translate.
+Audio-only multilingual family call translator built with React, LiveKit Cloud, and Gemini Live Translate.
 
 The app is designed for two sides:
 
-- `Parents / Родители` speak Russian and hear Russian translations.
-- `Grandchildren / Внуки` speak English and hear English translations.
+- `Parents / Родители` choose the language they speak and hear.
+- `Grandchildren / Внуки` choose the language they speak and hear.
 - Only one side can speak at a time using a tap-to-claim floor control.
 
 Firebase Hosting serves the Vite React app. API requests under `/api/**` are handled by a Cloud Run Node.js backend that manages rooms, LiveKit tokens, turn locking, and Gemini Live API translation bridges.
@@ -67,15 +67,17 @@ Open the Vite URL, usually `http://localhost:5173`. Vite proxies `/api` to `http
 Use two browser profiles or two different browsers on the same machine.
 
 1. Open `http://localhost:5173`.
-2. Click `Create room / Создать комнату`.
-3. Join the first window as `Parents / Родители`.
-4. Copy the room link.
-5. Open the link in the second browser profile.
-6. Join the second window as `Grandchildren / Внуки`.
-7. In the parents window, press `Speak Russian`, speak, then press `Done / Готово`.
-8. Confirm the grandchildren side hears English translated audio.
-9. In the grandchildren window, press `Speak English`, speak, then press `Done / Готово`.
-10. Confirm the parents side hears Russian translated audio.
+2. Confirm the language selector defaults to your browser/system language, or select another supported language.
+3. Click `Create room / Создать комнату`.
+4. Join the first window as `Parents / Родители`.
+5. Copy the room link.
+6. Open the link in the second browser profile.
+7. Select the second participant's language.
+8. Join the second window as `Grandchildren / Внуки`.
+9. In the parents window, press the speak button, speak, then press `Done / Готово`.
+10. Confirm the grandchildren side hears translated audio in their selected language.
+11. In the grandchildren window, press the speak button, speak, then press `Done / Готово`.
+12. Confirm the parents side hears translated audio in their selected language.
 
 Expected behavior:
 
@@ -111,13 +113,11 @@ Room state is in memory for v1, so deploy the backend as a single warm Cloud Run
 
 ## Translation Flow
 
-- Parents speak Russian.
-- `translator-en` subscribes to the parents' LiveKit audio track.
-- The backend streams PCM audio to `gemini-3.5-live-translate-preview` with `targetLanguageCode: "en"`.
-- Translated English audio is published back to LiveKit.
-- Grandchildren subscribe to `translator-en`.
-
-The reverse path uses `translator-ru` and `targetLanguageCode: "ru"`.
+- Each participant chooses a target language from the Live Translate supported-language list.
+- When one side speaks, the backend starts Gemini translation bridges for the selected languages used by participants on the other side.
+- Each bridge streams PCM audio to `gemini-3.5-live-translate-preview` with its `targetLanguageCode`.
+- Translated audio is published back to LiveKit as `translator-<language-code>`.
+- Participants subscribe to the translator track that matches their selected language.
 
 ## Firebase Hosting And Cloud Run
 

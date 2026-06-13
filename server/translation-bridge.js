@@ -5,7 +5,6 @@ import {
   LocalAudioTrack,
   RemoteAudioTrack,
   RemoteParticipant,
-  RemoteTrackPublication,
   Room,
   RoomEvent,
   TrackKind,

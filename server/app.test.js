@@ -112,4 +112,33 @@ describe('PIN protection', () => {
       openServer.close()
     }
   })
+
+  it('rejects unsupported participant languages before token creation', async () => {
+    const { app } = createApp({ appPin: undefined })
+    const languageServer = app.listen(0)
+    await new Promise((resolve) => languageServer.once('listening', resolve))
+    const languageUrl = `http://127.0.0.1:${languageServer.address().port}`
+
+    try {
+      const created = await fetch(`${languageUrl}/api/rooms`, {
+        method: 'POST',
+      }).then((res) => res.json())
+      const response = await fetch(
+        `${languageUrl}/api/rooms/${created.roomId}/token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            side: 'parents',
+            languageCode: 'not-supported',
+          }),
+        },
+      )
+
+      assert.equal(response.status, 400)
+      assert.equal((await response.json()).error, 'Invalid language')
+    } finally {
+      languageServer.close()
+    }
+  })
 })
