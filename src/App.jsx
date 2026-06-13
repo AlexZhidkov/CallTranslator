@@ -10,6 +10,7 @@ import {
   Phone,
   PhoneOff,
   Radio,
+  Share2,
   Volume2,
 } from "lucide-react";
 import { Room, RoomEvent, Track } from "livekit-client";
@@ -150,6 +151,8 @@ function App() {
   const isMyTurn = Boolean(floor && participant?.identity === floor.identity);
   const isSomeoneSpeaking = Boolean(floor);
   const canStartTurn = isJoined && !isSomeoneSpeaking;
+  const canShareJoinUrl =
+    typeof navigator !== "undefined" && typeof navigator.share === "function";
   const currentJoinUrl = useMemo(() => {
     if (!roomId) return "";
     const url = new URL(window.location.href);
@@ -287,6 +290,26 @@ function App() {
     await navigator.clipboard.writeText(currentJoinUrl);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  async function shareJoinLink() {
+    if (!currentJoinUrl) return;
+
+    if (!canShareJoinUrl) {
+      await copyJoinLink();
+      return;
+    }
+
+    try {
+      await navigator.share({
+        title: "Call Translator",
+        text: "Join this Call Translator call.",
+        url: currentJoinUrl,
+      });
+    } catch (shareError) {
+      if (shareError?.name === "AbortError") return;
+      await copyJoinLink();
+    }
   }
 
   function attachTranslatedTrack(track, publication, remoteParticipant) {
@@ -586,10 +609,18 @@ function App() {
             <button
               type="button"
               className="icon-button"
-              onClick={copyJoinLink}
+              onClick={shareJoinLink}
             >
-              {copied ? <Check size={20} /> : <Copy size={20} />}
-              <span>{copied ? "Copied" : "Copy link"}</span>
+              {copied ? (
+                <Check size={20} />
+              ) : canShareJoinUrl ? (
+                <Share2 size={20} />
+              ) : (
+                <Copy size={20} />
+              )}
+              <span>
+                {copied ? "Copied" : canShareJoinUrl ? "Share" : "Copy link"}
+              </span>
             </button>
           </section>
 
