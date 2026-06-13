@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title>Call Translator</title>
+  <rect width="512" height="512" rx="96" fill="#2f6f88"/>
+  <circle cx="256" cy="256" r="196" fill="#e8f3f6"/>
+  <path fill="#17211b" d="M177 292c-29 0-53-24-53-53v-25c0-73 59-132 132-132s132 59 132 132v25c0 29-24 53-53 53h-16c-13 0-24-11-24-24v-63c0-13 11-24 24-24h16c5 0 10 1 15 2-14-38-51-65-94-65s-80 27-94 65c5-1 10-2 15-2h16c13 0 24 11 24 24v63c0 13-11 24-24 24h-16Z"/>
+  <path fill="#ffffff" d="M189 215h-12c-11 0-20 9-20 20v6c0 11 9 20 20 20h12v-46Zm146 46c11 0 20-9 20-20v-6c0-11-9-20-20-20h-12v46h12Z"/>
+  <path fill="#217a4b" d="M203 353c0-20 16-36 36-36h77c20 0 36 16 36 36s-16 36-36 36h-25l-38 35c-8 7-21 1-21-9v-26c-17-3-29-18-29-36Z"/>
+  <path fill="#ffffff" d="M234 342h88v17h-88v-17Zm0 29h56v17h-56v-17Z"/>
+</svg>

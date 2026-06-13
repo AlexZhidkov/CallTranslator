@@ -10,6 +10,8 @@ Only one participant can speak at a time using a tap-to-claim floor control.
 
 Firebase Hosting serves the Vite React app. API requests under `/api/**` are handled by a Cloud Run Node.js backend that manages rooms, LiveKit tokens, turn locking, and Gemini Live API translation bridges.
 
+The frontend is installable as a Progressive Web App. It includes a web app manifest, app icons, and a service worker that caches the app shell and static assets. Calls and translation still require a live network connection because `/api/**`, LiveKit, and Gemini traffic are never served from cache.
+
 ## Requirements
 
 - Node.js 22+
