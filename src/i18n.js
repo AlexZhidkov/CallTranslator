@@ -1,6 +1,9 @@
 export const DEFAULT_UI_LOCALE = "en";
 
-export const UI_LOCALES = [{ code: "en", name: "English", dir: "ltr" }];
+export const UI_LOCALES = [
+  { code: "en", name: "English", dir: "ltr" },
+  { code: "ru", name: "Русский", dir: "ltr" },
+];
 
 export const UI_TRANSLATIONS = {
   en: {
@@ -49,6 +52,54 @@ export const UI_TRANSLATIONS = {
       sectionLabel: "Transcripts",
       title: "Transcript",
       empty: "Translated speech will appear here.",
+    },
+  },
+  ru: {
+    app: {
+      title: "Переводчик разговоров",
+    },
+    connection: {
+      idle: "Ожидание",
+      connecting: "Подключение",
+      connected: "Подключено",
+      disconnected: "Отключено",
+    },
+    languageSelect: {
+      label: "Ваш язык",
+    },
+    pin: {
+      sectionLabel: "Ввод PIN-кода",
+      title: "Введите PIN-код",
+      inputLabel: "PIN-код",
+      incorrect: "Неверный PIN-код",
+      unlock: "Разблокировать",
+    },
+    call: {
+      setupLabel: "Настройка разговора",
+      start: "Начать разговор",
+      shareSectionLabel: "Поделиться ссылкой",
+      roomLabel: "Разговор",
+      copied: "Скопировано",
+      share: "Поделиться",
+      copyLink: "Скопировать ссылку",
+      joinSectionLabel: "Присоединиться к разговору",
+      join: "Присоединиться",
+      controlsLabel: "Управление разговором",
+      enableSound: "Включить звук",
+      done: "Готово",
+      speakLanguage: "Говорите",
+      someoneSpeaking: "Говорит другой участник",
+      microphoneOff: "Микрофон выключен, пока вы не начнете говорить",
+      speechNotDetected: "Речь не распознана - повторите, пожалуйста.",
+      leave: "Выйти",
+    },
+    share: {
+      text: "Присоединитесь к этому разговору.",
+    },
+    transcript: {
+      sectionLabel: "Текст",
+      title: "Текст",
+      empty: "Здесь появится переведенная речь.",
     },
   },
 };
