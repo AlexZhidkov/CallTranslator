@@ -2,11 +2,11 @@
 
 Audio-only multilingual family call translator built with React, LiveKit Cloud, and Gemini Live Translate.
 
-The app is designed for two sides:
+Participants choose the language they speak and hear. The first user starts a
+call and joins immediately; users opening the shared link choose their language
+and join the same room.
 
-- `Parents / Родители` choose the language they speak and hear.
-- `Grandchildren / Внуки` choose the language they speak and hear.
-- Only one side can speak at a time using a tap-to-claim floor control.
+Only one participant can speak at a time using a tap-to-claim floor control.
 
 Firebase Hosting serves the Vite React app. API requests under `/api/**` are handled by a Cloud Run Node.js backend that manages rooms, LiveKit tokens, turn locking, and Gemini Live API translation bridges.
 
@@ -68,22 +68,22 @@ Use two browser profiles or two different browsers on the same machine.
 
 1. Open `http://localhost:5173`.
 2. Confirm the language selector defaults to your browser/system language, or select another supported language.
-3. Click `Create room / Создать комнату`.
-4. Join the first window as `Parents / Родители`.
+3. Click `Start Call`.
+4. Confirm the first window connects and shows the share row.
 5. Copy the room link.
 6. Open the link in the second browser profile.
 7. Select the second participant's language.
-8. Join the second window as `Grandchildren / Внуки`.
-9. In the parents window, press the speak button, speak, then press `Done / Готово`.
-10. Confirm the grandchildren side hears translated audio in their selected language.
-11. In the grandchildren window, press the speak button, speak, then press `Done / Готово`.
-12. Confirm the parents side hears translated audio in their selected language.
+8. Click `Join Call`.
+9. In the first window, press the speak button, speak, then press `Done`.
+10. Confirm the second participant hears translated audio in their selected language.
+11. In the second window, press the speak button, speak, then press `Done`.
+12. Confirm the first participant hears translated audio in their selected language.
 
 Expected behavior:
 
 - No camera permission is requested.
-- Microphone is enabled only while the active side has the floor.
-- The other side cannot speak until the current side presses `Done`.
+- Microphone is enabled only while the active participant has the floor.
+- The other participant cannot speak until the current participant presses `Done`.
 - Transcript items appear when Gemini returns transcription events.
 
 For two physical devices, use the deployed Firebase Hosting HTTPS URL. Browser microphone access usually will not work from `http://<LAN-IP>:5173`.
@@ -114,7 +114,9 @@ Room state is in memory for v1, so deploy the backend as a single warm Cloud Run
 ## Translation Flow
 
 - Each participant chooses a target language from the Live Translate supported-language list.
-- When one side speaks, the backend starts Gemini translation bridges for the selected languages used by participants on the other side.
+- When one participant speaks, the backend starts Gemini translation bridges for
+  selected languages used by participants assigned to the other internal room
+  role.
 - Each bridge streams PCM audio to `gemini-3.5-live-translate-preview` with its `targetLanguageCode`.
 - Translated audio is published back to LiveKit as `translator-<language-code>`.
 - Participants subscribe to the translator track that matches their selected language.

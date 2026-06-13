@@ -126,16 +126,18 @@ export function createApp({
       const { side, displayName, languageCode } = req.body || {}
       const room = roomStore.requireRoom(req.params.roomId)
       const language = requireSupportedLanguage(languageCode)
+      const participantSide =
+        side || roomStore.getNextParticipantSide(room.roomId)
       const config = livekitConfig || getLiveKitConfig()
       const token = await createParticipantToken({
         roomId: room.roomId,
-        side,
+        side: participantSide,
         displayName,
         livekitConfig: config,
       })
 
       const participant = roomStore.addParticipant(room.roomId, {
-        side,
+        side: participantSide,
         identity: token.identity,
         displayName,
         languageCode: language.code,

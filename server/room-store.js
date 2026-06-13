@@ -17,6 +17,7 @@ export const SIDES = {
   },
 }
 
+const SIDE_IDS = Object.keys(SIDES)
 const DEFAULT_TTL_MS = 4 * 60 * 60 * 1000
 
 export function createId(byteLength = 12) {
@@ -138,6 +139,22 @@ export class RoomStore {
     const timestamp = this.now()
     room.updatedAt = new Date(timestamp).toISOString()
     room.expiresAt = new Date(timestamp + this.ttlMs).toISOString()
+  }
+
+  getNextParticipantSide(roomId) {
+    const room = this.requireRoom(roomId)
+    let selectedSide = SIDE_IDS[0]
+    let selectedCount = room.participants[selectedSide].size
+
+    for (const side of SIDE_IDS.slice(1)) {
+      const count = room.participants[side].size
+      if (count < selectedCount) {
+        selectedSide = side
+        selectedCount = count
+      }
+    }
+
+    return selectedSide
   }
 
   addParticipant(roomId, { side, identity, displayName, languageCode }) {

@@ -11,7 +11,6 @@ import {
   Phone,
   PhoneOff,
   Radio,
-  Users,
   Volume2,
 } from "lucide-react";
 import { Room, RoomEvent, Track } from "livekit-client";
@@ -23,19 +22,6 @@ import {
   resolveSupportedLanguageCode,
 } from "../shared/supported-languages.js";
 import "./App.css";
-
-const SIDE_OPTIONS = {
-  parents: {
-    id: "parents",
-    title: "Parents",
-    titleRu: "Родители",
-  },
-  grandchildren: {
-    id: "grandchildren",
-    title: "Grandchildren",
-    titleRu: "Внуки",
-  },
-};
 
 const AUDIO_CAPTURE_OPTIONS = {
   echoCancellation: true,
@@ -134,20 +120,17 @@ async function apiFetch(path, options = {}) {
   return data;
 }
 
-function formatSide(side) {
-  if (!side) return "No one / Никто";
-  const config = SIDE_OPTIONS[side];
-  return config ? `${config.title} / ${config.titleRu}` : side;
+function formatSpeakingParticipant(floor, participant) {
+  if (!floor) return "No one";
+  return floor.identity === participant?.identity ? "You" : "Someone else";
 }
 
 function App() {
   const [roomId, setRoomId] = useState(getRoomIdFromUrl);
   const [roomInfo, setRoomInfo] = useState(null);
-  const [selectedSide, setSelectedSide] = useState("parents");
   const [selectedLanguageCode, setSelectedLanguageCode] = useState(
     getInitialLanguageCode,
   );
-  const [displayName, setDisplayName] = useState("");
   const [participant, setParticipant] = useState(null);
   const [connectionState, setConnectionState] = useState("idle");
   const [activeTurn, setActiveTurn] = useState(null);
@@ -165,7 +148,6 @@ function App() {
   const languageRef = useRef(selectedLanguageCode);
   const audioSinkRef = useRef(null);
 
-  const selectedConfig = SIDE_OPTIONS[selectedSide];
   const selectedLanguage =
     getSupportedLanguageByCode(selectedLanguageCode) ||
     getSupportedLanguageByCode(DEFAULT_LANGUAGE_CODE);
@@ -305,23 +287,6 @@ function App() {
     }
   }
 
-  async function createRoom() {
-    setError("");
-    setCopied(false);
-
-    try {
-      const data = await apiFetch("/api/rooms", { method: "POST" });
-      setRoomId(data.roomId);
-      setRoomInfo(data.room);
-
-      const url = new URL(window.location.href);
-      url.searchParams.set("room", data.roomId);
-      window.history.pushState({}, "", url);
-    } catch (requestError) {
-      setError(requestError.message);
-    }
-  }
-
   async function copyJoinLink() {
     if (!currentJoinUrl) return;
 
@@ -368,52 +333,74 @@ function App() {
     }
   }
 
+  async function joinLiveKitRoom(targetRoomId) {
+    const tokenData = await apiFetch(`/api/rooms/${targetRoomId}/token`, {
+      method: "POST",
+      body: JSON.stringify({
+        languageCode: selectedLanguage.code,
+      }),
+    });
+
+    const livekitRoom = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      audioCaptureDefaults: AUDIO_CAPTURE_OPTIONS,
+    });
+
+    livekitRoom.on(RoomEvent.TrackSubscribed, attachTranslatedTrack);
+    livekitRoom.on(RoomEvent.TrackUnsubscribed, (track) => {
+      track.detach().forEach((element) => element.remove());
+    });
+    livekitRoom.on(RoomEvent.DataReceived, handleDataReceived);
+    livekitRoom.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+      setCanPlayAudio(livekitRoom.canPlaybackAudio);
+    });
+    livekitRoom.on(RoomEvent.Disconnected, () => {
+      setConnectionState("disconnected");
+    });
+
+    await livekitRoom.connect(tokenData.livekitUrl, tokenData.token, {
+      autoSubscribe: true,
+    });
+
+    await livekitRoom.startAudio().catch(() => {});
+
+    roomRef.current = livekitRoom;
+    setParticipant(tokenData.participant);
+    setRoomInfo(tokenData.room);
+    setConnectionState("connected");
+  }
+
+  async function startCall() {
+    if (connectionState === "connecting") return;
+
+    setError("");
+    setCopied(false);
+    setConnectionState("connecting");
+
+    try {
+      const data = await apiFetch("/api/rooms", { method: "POST" });
+      await joinLiveKitRoom(data.roomId);
+
+      setRoomId(data.roomId);
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("room", data.roomId);
+      window.history.pushState({}, "", url);
+    } catch (requestError) {
+      setConnectionState("idle");
+      setError(requestError.message);
+    }
+  }
+
   async function joinRoom() {
-    if (!roomId) return;
+    if (!roomId || connectionState === "connecting") return;
 
     setError("");
     setConnectionState("connecting");
 
     try {
-      const tokenData = await apiFetch(`/api/rooms/${roomId}/token`, {
-        method: "POST",
-        body: JSON.stringify({
-          side: selectedSide,
-          languageCode: selectedLanguage.code,
-          displayName:
-            displayName.trim() ||
-            `${selectedConfig.title} / ${selectedConfig.titleRu}`,
-        }),
-      });
-
-      const livekitRoom = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-        audioCaptureDefaults: AUDIO_CAPTURE_OPTIONS,
-      });
-
-      livekitRoom.on(RoomEvent.TrackSubscribed, attachTranslatedTrack);
-      livekitRoom.on(RoomEvent.TrackUnsubscribed, (track) => {
-        track.detach().forEach((element) => element.remove());
-      });
-      livekitRoom.on(RoomEvent.DataReceived, handleDataReceived);
-      livekitRoom.on(RoomEvent.AudioPlaybackStatusChanged, () => {
-        setCanPlayAudio(livekitRoom.canPlaybackAudio);
-      });
-      livekitRoom.on(RoomEvent.Disconnected, () => {
-        setConnectionState("disconnected");
-      });
-
-      await livekitRoom.connect(tokenData.livekitUrl, tokenData.token, {
-        autoSubscribe: true,
-      });
-
-      await livekitRoom.startAudio().catch(() => {});
-
-      roomRef.current = livekitRoom;
-      setParticipant(tokenData.participant);
-      setRoomInfo(tokenData.room);
-      setConnectionState("connected");
+      await joinLiveKitRoom(roomId);
     } catch (requestError) {
       setConnectionState("idle");
       setError(requestError.message);
@@ -437,7 +424,7 @@ function App() {
       const data = await apiFetch(`/api/rooms/${roomId}/turn/start`, {
         method: "POST",
         body: JSON.stringify({
-          side: selectedSide,
+          side: participant.side,
           identity: participant.identity,
         }),
       });
@@ -585,7 +572,12 @@ function App() {
               onChange={setSelectedLanguageCode}
             />
           </div>
-          <button className="primary-action" type="button" onClick={createRoom}>
+          <button
+            className="primary-action"
+            type="button"
+            onClick={startCall}
+            disabled={connectionState === "connecting"}
+          >
             <Phone size={22} />
             Start Call
           </button>
@@ -611,43 +603,15 @@ function App() {
             </a>
           </section>
 
-          <section className="join-grid" aria-label="Join options">
-            {Object.values(SIDE_OPTIONS).map((side) => (
-              <button
-                key={side.id}
-                type="button"
-                className={`side-option ${
-                  selectedSide === side.id ? "selected" : ""
-                }`}
-                onClick={() => setSelectedSide(side.id)}
-                disabled={isJoined}
-              >
-                <Users size={22} />
-                <span>
-                  <strong>{side.title}</strong>
-                  <small>
-                    {roomInfo?.participantCounts?.[side.id] || 0} connected
-                  </small>
-                </span>
-              </button>
-            ))}
-          </section>
-
           {!isJoined ? (
-            <section className="join-panel">
-              <label>
-                <span>Name / Имя</span>
-                <input
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                  placeholder={`${selectedConfig.title}`}
+            <section className="start-panel" aria-label="Join call">
+              <div className="start-copy">
+                <LanguageSelect
+                  id="join-language"
+                  value={selectedLanguage.code}
+                  onChange={setSelectedLanguageCode}
                 />
-              </label>
-              <LanguageSelect
-                id="join-language"
-                value={selectedLanguage.code}
-                onChange={setSelectedLanguageCode}
-              />
+              </div>
               <button
                 type="button"
                 className="primary-action"
@@ -655,7 +619,7 @@ function App() {
                 disabled={connectionState === "connecting"}
               >
                 <Headphones size={22} />
-                Join as {selectedConfig.title}
+                Join Call
               </button>
             </section>
           ) : (
@@ -672,19 +636,18 @@ function App() {
               ) : null}
               <div className="status-board">
                 <div>
-                  <span className="label">You are / Вы</span>
+                  <span className="label">You</span>
                   <strong>
-                    {selectedConfig.title} / {selectedConfig.titleRu}
-                    <small>
-                      {`${selectedLanguage.name} (${getLanguageDisplayCode(
-                        selectedLanguage,
-                      )})`}
-                    </small>
+                    {`${selectedLanguage.name} (${getLanguageDisplayCode(
+                      selectedLanguage,
+                    )})`}
                   </strong>
                 </div>
                 <div>
                   <span className="label">Speaking</span>
-                  <strong>{formatSide(floor?.side)}</strong>
+                  <strong>
+                    {formatSpeakingParticipant(floor, participant)}
+                  </strong>
                 </div>
                 <div>
                   <span className="label">Listening in</span>
@@ -705,16 +668,13 @@ function App() {
                 {isMyTurn ? <MicOff size={34} /> : <Mic size={34} />}
                 <span>
                   {isMyTurn ? "Done" : `Speak ${selectedLanguage.name}`}
-                  {!isMyTurn ? (
-                    <small>{selectedConfig.title} side</small>
-                  ) : null}
                 </span>
               </button>
 
               {floor && !isMyTurn ? (
                 <p className="floor-note">
                   <Lock size={18} />
-                  {formatSide(floor.side)} speaking
+                  Someone else is speaking
                 </p>
               ) : (
                 <p className="floor-note">
