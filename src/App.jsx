@@ -900,8 +900,9 @@ function App() {
             </div>
             <button
               type="button"
-              className="icon-button"
+              className="icon-button share-button"
               onClick={shareJoinLink}
+              aria-label={shareButtonLabel}
             >
               {copied ? (
                 <Check size={20} />

@@ -153,11 +153,23 @@
 .share-row > div:first-child {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.share-row .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .share-row strong {
   display: block;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 label {
@@ -473,14 +485,12 @@ button {
   }
 
   .top-bar,
-  .start-panel,
-  .share-row {
+  .start-panel {
     align-items: stretch;
     flex-direction: column;
   }
 
   .top-bar,
-  .share-row,
   .start-panel {
     display: flex;
   }
@@ -500,5 +510,19 @@ button {
 
   .transcript-panel li {
     width: 94%;
+  }
+
+  .share-row {
+    padding: 12px;
+  }
+
+  .share-button {
+    width: 48px;
+    min-width: 48px;
+    padding: 0;
+  }
+
+  .share-button span {
+    display: none;
   }
 }
