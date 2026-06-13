@@ -29,6 +29,7 @@ export class BridgeManager {
       statuses[bridge.targetLanguage] = {
         identity: bridge.identity,
         sourceIdentity: bridge.sourceIdentity,
+        sourceLanguage: bridge.sourceLanguage,
         status: bridge.status,
         framesSent: bridge.framesSent,
         framesReceived: bridge.framesReceived,
@@ -38,24 +39,38 @@ export class BridgeManager {
     return statuses
   }
 
-  async startTurn({ roomId, sourceIdentity, targetLanguage, targetLanguages }) {
+  async startTurn({
+    roomId,
+    sourceIdentity,
+    sourceLanguage,
+    targetLanguage,
+    targetLanguages,
+  }) {
     const languages = normalizeTargetLanguages({
       targetLanguage,
       targetLanguages,
     })
 
     return Promise.all(
-      languages.map((languageCode) =>
+      languages.map((languageCode, index) =>
         this.startSingleBridge({
           roomId,
           sourceIdentity,
+          sourceLanguage,
           targetLanguage: languageCode,
+          publishSourceTranscription: index === 0,
         }),
       ),
     )
   }
 
-  async startSingleBridge({ roomId, sourceIdentity, targetLanguage }) {
+  async startSingleBridge({
+    roomId,
+    sourceIdentity,
+    sourceLanguage,
+    targetLanguage,
+    publishSourceTranscription = true,
+  }) {
     const key = bridgeKey(roomId, targetLanguage)
     const existing = this.bridges.get(key)
 
@@ -64,6 +79,8 @@ export class BridgeManager {
       existing.sourceIdentity === sourceIdentity &&
       existing.status === 'active'
     ) {
+      existing.sourceLanguage = sourceLanguage
+      existing.publishSourceTranscription = publishSourceTranscription
       return existing
     }
 
@@ -75,7 +92,9 @@ export class BridgeManager {
     const bridge = new TranslationBridge({
       roomId,
       sourceIdentity,
+      sourceLanguage,
       targetLanguage,
+      publishSourceTranscription,
       livekitConfig: this.livekitConfig,
       geminiConfig: this.geminiConfig,
     })

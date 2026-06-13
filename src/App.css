@@ -342,11 +342,50 @@ button {
   background: var(--panel);
   border-radius: 7px;
   padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.transcript-panel li.mine {
+  border-left-color: var(--accent);
+}
+
+.transcript-panel li.theirs {
+  border-left-color: var(--success);
+}
+
+.transcript-panel li.speaker-parents {
+  border-left-color: var(--accent);
+}
+
+.transcript-panel li.speaker-grandchildren {
+  border-left-color: var(--success);
 }
 
 .transcript-panel li.interim {
   color: var(--muted);
-  border-left-color: var(--warning);
+}
+
+.transcript-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.transcript-speaker {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.transcript-panel li.interim .transcript-speaker {
+  color: var(--muted);
+}
+
+.transcript-panel li p {
+  margin: 0;
 }
 
 .audio-sink {

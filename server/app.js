@@ -187,6 +187,7 @@ export function createApp({
         await manager.startTurn({
           roomId: room.roomId,
           sourceIdentity: identity,
+          sourceLanguage: result.floor.sourceLanguage,
           targetLanguages: result.floor.targetLanguages,
         })
       }

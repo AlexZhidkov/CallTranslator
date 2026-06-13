@@ -22,13 +22,17 @@ export class TranslationBridge {
   constructor({
     roomId,
     sourceIdentity,
+    sourceLanguage,
     targetLanguage,
+    publishSourceTranscription = true,
     livekitConfig,
     geminiConfig,
   }) {
     this.roomId = roomId
     this.sourceIdentity = sourceIdentity
+    this.sourceLanguage = sourceLanguage
     this.targetLanguage = targetLanguage
+    this.publishSourceTranscription = publishSourceTranscription
     this.identity = `translator-${targetLanguage}`
     this.livekitConfig = livekitConfig
     this.geminiConfig = geminiConfig
@@ -242,11 +246,31 @@ export class TranslationBridge {
       }
     }
 
+    if (
+      this.publishSourceTranscription &&
+      serverContent?.inputTranscription?.text
+    ) {
+      const language =
+        this.sourceLanguage || serverContent.inputTranscription.languageCode
+
+      this.publishTranscriptionSafely({
+        text: serverContent.inputTranscription.text,
+        language,
+        segmentId: `${this.sourceIdentity}-input-${this.transcriptionSegmentId}`,
+        final: Boolean(serverContent.turnComplete),
+        transcriptSource: 'input',
+      })
+    }
+
     if (serverContent?.outputTranscription?.text) {
-      this.publishTranscription(
-        serverContent.outputTranscription.text,
-        !serverContent.turnComplete,
-      )
+      this.publishTranscriptionSafely({
+        text: serverContent.outputTranscription.text,
+        language:
+          this.targetLanguage || serverContent.outputTranscription.languageCode,
+        segmentId: `${this.targetLanguage}-output-${this.transcriptionSegmentId}`,
+        final: Boolean(serverContent.turnComplete),
+        transcriptSource: 'output',
+      })
     }
 
     if (serverContent?.turnComplete) {
@@ -258,6 +282,15 @@ export class TranslationBridge {
       this.turnEndSignalSent = false
       this.transcriptionSegmentId += 1
     }
+  }
+
+  publishTranscriptionSafely(payload) {
+    this.publishTranscription(payload).catch((error) => {
+      console.error(
+        `[TranslationBridge:${this.targetLanguage}] Failed to publish transcription`,
+        error,
+      )
+    })
   }
 
   queueAudioFrame(base64Audio) {
@@ -381,16 +414,24 @@ export class TranslationBridge {
     )
   }
 
-  async publishTranscription(text, interim) {
-    if (!this.room?.localParticipant) return
+  async publishTranscription({
+    text,
+    language,
+    segmentId,
+    final,
+    transcriptSource,
+  }) {
+    if (!this.room?.localParticipant || !text || !language || !segmentId) return
 
     this.speechDetectedThisTurn = true
     const payload = JSON.stringify({
       type: 'transcription',
-      language: this.targetLanguage,
-      segmentId: `${this.targetLanguage}-${this.transcriptionSegmentId}`,
+      language,
+      segmentId,
+      speakerIdentity: this.sourceIdentity,
       text,
-      final: !interim,
+      final: Boolean(final),
+      transcriptSource,
       timestamp: Date.now(),
     })
 

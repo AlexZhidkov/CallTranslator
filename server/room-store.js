@@ -210,11 +210,13 @@ export class RoomStore {
       }
     }
 
+    const sourceParticipant = room.participants[side].get(identity)
     const targetLanguages = getTargetLanguagesForSide(room, side)
     room.floor = {
       turnId: createId(10),
       side,
       identity,
+      sourceLanguage: sourceParticipant?.languageCode || null,
       targetLanguage: targetLanguages[0] || null,
       targetLanguages,
       translatorIdentity: targetLanguages[0]

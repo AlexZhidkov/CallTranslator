@@ -52,6 +52,8 @@ export const UI_TRANSLATIONS = {
       sectionLabel: "Transcripts",
       title: "Transcript",
       empty: "Translated speech will appear here.",
+      speaker: "Speaker",
+      you: "You",
     },
   },
   ru: {
@@ -100,6 +102,8 @@ export const UI_TRANSLATIONS = {
       sectionLabel: "Текст",
       title: "Текст",
       empty: "Здесь появится переведенная речь.",
+      speaker: "Собеседник",
+      you: "Вы",
     },
   },
 };

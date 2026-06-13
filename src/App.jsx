@@ -37,6 +37,7 @@ const AUDIO_CAPTURE_OPTIONS = {
 
 const PIN_STORAGE_KEY = "call-translator-pin";
 const ROOM_NOT_FOUND_MESSAGE = "Room not found";
+const TRANSCRIPT_LIMIT = 8;
 
 function getStoredPin() {
   try {
@@ -88,6 +89,64 @@ function getInitialLanguageCode() {
 
 function getTranslatorIdentity(languageCode) {
   return `translator-${languageCode}`;
+}
+
+function findRoomParticipant(roomInfo, identity) {
+  if (!identity) return null;
+
+  for (const participants of Object.values(roomInfo?.participants || {})) {
+    const match = participants.find(
+      (roomParticipant) => roomParticipant.identity === identity,
+    );
+    if (match) return match;
+  }
+
+  return null;
+}
+
+function upsertTranscript(current, nextItem) {
+  const existingIndex = current.findIndex((item) => item.id === nextItem.id);
+
+  if (existingIndex === -1) {
+    return [nextItem, ...current].slice(0, TRANSCRIPT_LIMIT);
+  }
+
+  const existing = current[existingIndex];
+  const keepFinalText = existing.final && !nextItem.final;
+  const merged = {
+    ...existing,
+    ...nextItem,
+    text: keepFinalText ? existing.text : nextItem.text,
+    final: existing.final || nextItem.final,
+    timestamp: Math.max(existing.timestamp, nextItem.timestamp),
+  };
+  const withoutExisting = current.filter((item) => item.id !== nextItem.id);
+
+  return [merged, ...withoutExisting].slice(0, TRANSCRIPT_LIMIT);
+}
+
+function getTranscriptSpeakerLabel(item, roomInfo, participant, t) {
+  if (item.speakerIdentity === participant?.identity) {
+    return t("transcript.you");
+  }
+
+  const speaker = findRoomParticipant(roomInfo, item.speakerIdentity);
+  return speaker?.displayName || speaker?.identity || t("transcript.speaker");
+}
+
+function getTranscriptClassName(item, roomInfo, participant) {
+  const classes = [item.final ? "final" : "interim"];
+  const speaker = findRoomParticipant(roomInfo, item.speakerIdentity);
+
+  classes.push(
+    item.speakerIdentity === participant?.identity ? "mine" : "theirs",
+  );
+
+  if (speaker?.side) {
+    classes.push(`speaker-${speaker.side}`);
+  }
+
+  return classes.join(" ");
 }
 
 function LanguageSelect({ id, label, value, onChange, disabled = false }) {
@@ -401,19 +460,32 @@ function App() {
         return;
       }
 
+      if (message.type !== "transcription" || !message.text) return;
+      const speakerIdentity =
+        message.speakerIdentity || remoteParticipant?.identity || "";
+      const isLocalSpeaker =
+        speakerIdentity === participantRef.current?.identity;
+      if (message.transcriptSource === "input" && !isLocalSpeaker) return;
+      if (message.transcriptSource === "output" && isLocalSpeaker) return;
       if (message.language !== languageRef.current) return;
 
+      const timestamp = Number.isFinite(message.timestamp)
+        ? message.timestamp
+        : Date.now();
+      const segmentId =
+        message.segmentId ||
+        `${message.language}-${message.speakerIdentity || "unknown"}-${timestamp}`;
+
       setTranscripts((current) =>
-        [
-          {
-            id: `${message.segmentId}-${message.timestamp}`,
-            speaker: remoteParticipant?.identity || "translator",
-            text: message.text,
-            final: message.final,
-            timestamp: message.timestamp,
-          },
-          ...current,
-        ].slice(0, 8),
+        upsertTranscript(current, {
+          id: segmentId,
+          speakerIdentity,
+          text: message.text,
+          final: Boolean(message.final),
+          language: message.language,
+          transcriptSource: message.transcriptSource || "output",
+          timestamp,
+        }),
       );
     } catch (decodeError) {
       console.warn("Ignoring invalid transcription payload", decodeError);
@@ -796,7 +868,7 @@ function App() {
             </section>
           )}
 
-          {transcripts.length && transcripts.length > 0 ? (
+          {transcripts.length > 0 ? (
             <section
               className="transcript-panel"
               aria-label={t("transcript.sectionLabel")}
@@ -806,14 +878,20 @@ function App() {
                 <span>{transcripts.length}</span>
               </div>
               <ol>
-                {transcripts.map((item) => (
-                  <li
-                    key={item.id}
-                    className={item.final ? "final" : "interim"}
-                  >
-                    {item.text}
-                  </li>
-                ))}
+                {transcripts.map((item) => {
+                  return (
+                    <li
+                      key={item.id}
+                      className={getTranscriptClassName(
+                        item,
+                        roomInfo,
+                        participant,
+                      )}
+                    >
+                      <p>{item.text}</p>
+                    </li>
+                  );
+                })}
               </ol>
             </section>
           ) : null}

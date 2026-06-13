@@ -49,6 +49,7 @@ test('stores participant languages and targets the opposite side', () => {
   })
 
   assert.equal(turn.granted, true)
+  assert.equal(turn.floor.sourceLanguage, 'ru')
   assert.deepEqual(turn.floor.targetLanguages, ['es'])
   assert.equal(turn.floor.translatorIdentity, 'translator-es')
   assert.deepEqual(turn.floor.translatorIdentities, ['translator-es'])
