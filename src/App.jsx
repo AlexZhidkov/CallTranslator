@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertCircle,
   Check,
   Copy,
   Headphones,
@@ -130,6 +131,7 @@ function App() {
   const [connectionState, setConnectionState] = useState("idle");
   const [activeTurn, setActiveTurn] = useState(null);
   const [transcripts, setTranscripts] = useState([]);
+  const [speechWarning, setSpeechWarning] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [canPlayAudio, setCanPlayAudio] = useState(true);
@@ -331,6 +333,13 @@ function App() {
 
     try {
       const message = JSON.parse(new TextDecoder().decode(payload));
+      if (message.type === "no_speech_detected") {
+        if (message.speakerIdentity === participantRef.current?.identity) {
+          setSpeechWarning(true);
+        }
+        return;
+      }
+
       if (message.language !== languageRef.current) return;
 
       setTranscripts((current) =>
@@ -436,6 +445,7 @@ function App() {
     if (!participant || !roomRef.current) return;
 
     setError("");
+    setSpeechWarning(false);
 
     try {
       const data = await apiFetch(`/api/rooms/${roomId}/turn/start`, {
@@ -521,6 +531,7 @@ function App() {
     setParticipant(null);
     setConnectionState("idle");
     setTranscripts([]);
+    setSpeechWarning(false);
     setActiveTurn(null);
     setCanPlayAudio(true);
   }
@@ -678,6 +689,13 @@ function App() {
                   Microphone is off until you speak
                 </p>
               )}
+
+              {speechWarning ? (
+                <p className="speech-warning">
+                  <AlertCircle size={18} />
+                  Message not detected - please speak again.
+                </p>
+              ) : null}
 
               <button
                 type="button"

@@ -44,6 +44,8 @@ export class TranslationBridge {
     this.framesReceived = 0
     this.transcriptionSegmentId = 0
     this.closedByUser = false
+    this.speechDetectedThisTurn = false
+    this.turnEndSignalSent = false
   }
 
   async start() {
@@ -75,6 +77,7 @@ export class TranslationBridge {
   sendAudioStreamEnd() {
     if (!this.geminiWs || this.geminiWs.readyState !== WebSocket.OPEN) return
 
+    this.turnEndSignalSent = true
     this.geminiWs.send(
       JSON.stringify({
         realtimeInput: {
@@ -247,6 +250,12 @@ export class TranslationBridge {
     }
 
     if (serverContent?.turnComplete) {
+      if (this.turnEndSignalSent && !this.speechDetectedThisTurn) {
+        this.publishNoSpeechDetected().catch(() => {})
+      }
+
+      this.speechDetectedThisTurn = false
+      this.turnEndSignalSent = false
       this.transcriptionSegmentId += 1
     }
   }
@@ -375,6 +384,7 @@ export class TranslationBridge {
   async publishTranscription(text, interim) {
     if (!this.room?.localParticipant) return
 
+    this.speechDetectedThisTurn = true
     const payload = JSON.stringify({
       type: 'transcription',
       language: this.targetLanguage,
@@ -382,6 +392,23 @@ export class TranslationBridge {
       text,
       final: !interim,
       timestamp: Date.now(),
+    })
+
+    await this.room.localParticipant.publishData(
+      new TextEncoder().encode(payload),
+      {
+        reliable: true,
+        topic: 'transcription',
+      },
+    )
+  }
+
+  async publishNoSpeechDetected() {
+    if (!this.room?.localParticipant) return
+
+    const payload = JSON.stringify({
+      type: 'no_speech_detected',
+      speakerIdentity: this.sourceIdentity,
     })
 
     await this.room.localParticipant.publishData(
