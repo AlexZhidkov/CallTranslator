@@ -123,6 +123,14 @@ Room state is in memory for v1, so deploy the backend as a single warm Cloud Run
 - Translated audio is published back to LiveKit as `translator-<language-code>`.
 - Participants subscribe to the translator track that matches their selected language.
 
+## UI Translations
+
+Interface copy lives in `src/i18n.js`. To add a UI language, add an entry to
+`UI_LOCALES` and a matching catalog in `UI_TRANSLATIONS` with the same keys as
+`en`. The participant's selected language controls both the interface language
+and the spoken translation target. If interface strings are missing for that
+language, the UI falls back to English.
+
 ## Firebase Hosting And Cloud Run
 
 `firebase.json` keeps the static build in `dist` and rewrites `/api/**` to the Cloud Run service:

@@ -22,6 +22,11 @@ import {
   getSupportedLanguageByCode,
   resolveSupportedLanguageCode,
 } from "../shared/supported-languages.js";
+import {
+  createTranslator,
+  getUiLocaleDirection,
+  resolveUiLocale,
+} from "./i18n.js";
 import "./App.css";
 
 const AUDIO_CAPTURE_OPTIONS = {
@@ -85,10 +90,10 @@ function getTranslatorIdentity(languageCode) {
   return `translator-${languageCode}`;
 }
 
-function LanguageSelect({ id, value, onChange, disabled = false }) {
+function LanguageSelect({ id, label, value, onChange, disabled = false }) {
   return (
     <label className="language-select" htmlFor={id}>
-      <span>Your language</span>
+      <span>{label}</span>
       <select
         id={id}
         value={value}
@@ -157,6 +162,11 @@ function App() {
   const selectedLanguage =
     getSupportedLanguageByCode(selectedLanguageCode) ||
     getSupportedLanguageByCode(DEFAULT_LANGUAGE_CODE);
+  const uiLocale = resolveUiLocale(selectedLanguage.code);
+  const t = useMemo(
+    () => createTranslator(selectedLanguage.code),
+    [selectedLanguage.code],
+  );
   const floor = roomInfo?.floor || activeTurn;
   const isJoined = Boolean(participant);
   const isMyTurn = Boolean(floor && participant?.identity === floor.identity);
@@ -164,12 +174,26 @@ function App() {
   const canStartTurn = isJoined && !isSomeoneSpeaking;
   const canShareJoinUrl =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
+  const shareButtonLabel = copied
+    ? t("call.copied")
+    : canShareJoinUrl
+      ? t("call.share")
+      : t("call.copyLink");
+  const speakButtonLabel = isMyTurn
+    ? t("call.done")
+    : t("call.speakLanguage", { language: selectedLanguage.name });
   const currentJoinUrl = useMemo(() => {
     if (!roomId) return "";
     const url = new URL(window.location.href);
     url.searchParams.set("room", roomId);
     return url.toString();
   }, [roomId]);
+
+  useEffect(() => {
+    document.documentElement.lang = uiLocale;
+    document.documentElement.dir = getUiLocaleDirection(uiLocale);
+    document.title = t("app.title");
+  }, [t, uiLocale]);
 
   useEffect(() => {
     roomIdRef.current = roomId;
@@ -318,9 +342,7 @@ function App() {
     } catch (requestError) {
       clearStoredPin();
       setPinError(
-        requestError.status === 401
-          ? "Incorrect PIN / Неверный ПИН-код"
-          : requestError.message,
+        requestError.status === 401 ? t("pin.incorrect") : requestError.message,
       );
     }
   }
@@ -343,8 +365,8 @@ function App() {
 
     try {
       await navigator.share({
-        title: "Call Translator",
-        text: "Join this Call Translator call.",
+        title: t("app.title"),
+        text: t("share.text"),
         url: currentJoinUrl,
       });
     } catch (shareError) {
@@ -606,13 +628,13 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="top-bar" aria-label="Call setup">
+      <section className="top-bar" aria-label={t("call.setupLabel")}>
         <div>
-          <h1>Call Translator</h1>
+          <h1>{t("app.title")}</h1>
         </div>
         <div className={`connection-pill ${connectionState}`}>
           <Radio size={18} />
-          <span>{connectionState}</span>
+          <span>{t(`connection.${connectionState}`)}</span>
         </div>
       </section>
 
@@ -622,16 +644,16 @@ function App() {
 
       {accessState !== "unlocked" ? (
         accessState === "checking" ? null : (
-          <section className="pin-panel" aria-label="PIN entry">
+          <section className="pin-panel" aria-label={t("pin.sectionLabel")}>
             <div>
-              <h2>Enter PIN</h2>
+              <h2>{t("pin.title")}</h2>
             </div>
             <form onSubmit={submitPin}>
               <input
                 type="password"
                 inputMode="numeric"
                 autoComplete="off"
-                aria-label="PIN code / ПИН-код"
+                aria-label={t("pin.inputLabel")}
                 placeholder="••••"
                 value={pinInput}
                 onChange={(event) =>
@@ -644,7 +666,7 @@ function App() {
                 disabled={!pinInput.trim()}
               >
                 <KeyRound size={22} />
-                Unlock
+                {t("pin.unlock")}
               </button>
             </form>
             {pinError ? <p className="pin-error">{pinError}</p> : null}
@@ -655,6 +677,7 @@ function App() {
           <div className="start-copy">
             <LanguageSelect
               id="landing-language"
+              label={t("languageSelect.label")}
               value={selectedLanguage.code}
               onChange={setSelectedLanguageCode}
             />
@@ -666,14 +689,17 @@ function App() {
             disabled={connectionState === "connecting"}
           >
             <Phone size={22} />
-            Start Call
+            {t("call.start")}
           </button>
         </section>
       ) : (
         <>
-          <section className="share-row" aria-label="Share call">
+          <section
+            className="share-row"
+            aria-label={t("call.shareSectionLabel")}
+          >
             <div>
-              <span className="label">Call</span>
+              <span className="label">{t("call.roomLabel")}</span>
               <strong>{roomId}</strong>
             </div>
             <button
@@ -688,17 +714,19 @@ function App() {
               ) : (
                 <Copy size={20} />
               )}
-              <span>
-                {copied ? "Copied" : canShareJoinUrl ? "Share" : "Copy link"}
-              </span>
+              <span>{shareButtonLabel}</span>
             </button>
           </section>
 
           {!isJoined ? (
-            <section className="start-panel" aria-label="Join call">
+            <section
+              className="start-panel"
+              aria-label={t("call.joinSectionLabel")}
+            >
               <div className="start-copy">
                 <LanguageSelect
                   id="join-language"
+                  label={t("languageSelect.label")}
                   value={selectedLanguage.code}
                   onChange={setSelectedLanguageCode}
                 />
@@ -710,11 +738,14 @@ function App() {
                 disabled={connectionState === "connecting"}
               >
                 <Headphones size={22} />
-                Join Call
+                {t("call.join")}
               </button>
             </section>
           ) : (
-            <section className="call-surface" aria-label="Call controls">
+            <section
+              className="call-surface"
+              aria-label={t("call.controlsLabel")}
+            >
               {!canPlayAudio ? (
                 <button
                   type="button"
@@ -722,7 +753,7 @@ function App() {
                   onClick={enableAudioPlayback}
                 >
                   <Volume2 size={22} />
-                  Enable sound
+                  {t("call.enableSound")}
                 </button>
               ) : null}
               <button
@@ -732,27 +763,25 @@ function App() {
                 disabled={!isMyTurn && !canStartTurn}
               >
                 {isMyTurn ? <MicOff size={34} /> : <Mic size={34} />}
-                <span>
-                  {isMyTurn ? "Done" : `Speak ${selectedLanguage.name}`}
-                </span>
+                <span>{speakButtonLabel}</span>
               </button>
 
               {floor && !isMyTurn ? (
                 <p className="floor-note">
                   <Lock size={18} />
-                  Someone else is speaking
+                  {t("call.someoneSpeaking")}
                 </p>
               ) : (
                 <p className="floor-note">
                   <Headphones size={18} />
-                  Microphone is off until you speak
+                  {t("call.microphoneOff")}
                 </p>
               )}
 
               {speechWarning ? (
                 <p className="speech-warning">
                   <AlertCircle size={18} />
-                  Message not detected - please speak again.
+                  {t("call.speechNotDetected")}
                 </p>
               ) : null}
 
@@ -762,17 +791,20 @@ function App() {
                 onClick={leaveRoom}
               >
                 <PhoneOff size={20} />
-                Leave
+                {t("call.leave")}
               </button>
             </section>
           )}
 
-          <section className="transcript-panel" aria-label="Transcripts">
-            <div className="section-heading">
-              <h2>Transcript</h2>
-              <span>{transcripts.length}</span>
-            </div>
-            {transcripts.length ? (
+          {transcripts.length && transcripts.length > 0 ? (
+            <section
+              className="transcript-panel"
+              aria-label={t("transcript.sectionLabel")}
+            >
+              <div className="section-heading">
+                <h2>{t("transcript.title")}</h2>
+                <span>{transcripts.length}</span>
+              </div>
               <ol>
                 {transcripts.map((item) => (
                   <li
@@ -783,10 +815,8 @@ function App() {
                   </li>
                 ))}
               </ol>
-            ) : (
-              <p className="muted">Translated speech will appear here.</p>
-            )}
-          </section>
+            </section>
+          ) : null}
         </>
       )}
 
