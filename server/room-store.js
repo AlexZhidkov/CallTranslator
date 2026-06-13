@@ -6,6 +6,12 @@ import {
 
 const CONVERSATION_SIDE_COUNT = 2
 const DEFAULT_TTL_MS = 4 * 60 * 60 * 1000
+export const CONVERSATION_MODE_FLOOR = 'floor'
+export const CONVERSATION_MODE_FREE_FLOW = 'freeFlow'
+export const CONVERSATION_MODES = [
+  CONVERSATION_MODE_FLOOR,
+  CONVERSATION_MODE_FREE_FLOW,
+]
 
 export function createId(byteLength = 12) {
   return randomBytes(byteLength).toString('base64url')
@@ -29,6 +35,14 @@ function createError(message, statusCode) {
   const error = new Error(message)
   error.statusCode = statusCode
   return error
+}
+
+function requireConversationMode(conversationMode) {
+  if (CONVERSATION_MODES.includes(conversationMode)) {
+    return conversationMode
+  }
+
+  throw createError('Invalid conversation mode', 400)
 }
 
 function getNextParticipantSideIndex(room) {
@@ -60,6 +74,10 @@ function getTargetLanguagesForSide(room, speakingSideIndex) {
   return Array.from(targetLanguages)
 }
 
+function getTargetLanguagesForParticipant(room, participant) {
+  return getTargetLanguagesForSide(room, participant.sideIndex)
+}
+
 function createParticipant(identity, sideIndex, languageCode) {
   const language = requireSupportedParticipantLanguage(languageCode)
   const timestamp = new Date().toISOString()
@@ -75,7 +93,8 @@ function createParticipant(identity, sideIndex, languageCode) {
 }
 
 function toPublicParticipant(participant) {
-  const { sideIndex, ...publicParticipant } = participant
+  const publicParticipant = { ...participant }
+  delete publicParticipant.sideIndex
   return publicParticipant
 }
 
@@ -103,6 +122,7 @@ export class RoomStore {
       updatedAt: new Date(timestamp).toISOString(),
       expiresAt: new Date(timestamp + this.ttlMs).toISOString(),
       participants: new Map(),
+      conversationMode: CONVERSATION_MODE_FLOOR,
       floor: null,
     }
 
@@ -164,6 +184,33 @@ export class RoomStore {
     return toPublicParticipant(participant)
   }
 
+  setConversationMode(roomId, conversationMode) {
+    const mode = requireConversationMode(conversationMode)
+    const room = this.requireRoom(roomId)
+    const previousMode = room.conversationMode || CONVERSATION_MODE_FLOOR
+    const endedFloor = room.floor
+
+    if (previousMode === mode) {
+      return {
+        room,
+        previousMode,
+        conversationMode: mode,
+        endedFloor: null,
+      }
+    }
+
+    room.conversationMode = mode
+    room.floor = null
+    this.touch(room)
+
+    return {
+      room,
+      previousMode,
+      conversationMode: mode,
+      endedFloor,
+    }
+  }
+
   removeParticipant(roomId, identity) {
     const room = this.getRoom(roomId)
     if (!room) return null
@@ -180,6 +227,13 @@ export class RoomStore {
 
   startTurn(roomId, { identity }) {
     const room = this.requireRoom(roomId)
+    if (
+      (room.conversationMode || CONVERSATION_MODE_FLOOR) !==
+      CONVERSATION_MODE_FLOOR
+    ) {
+      throw createError('Floor control is disabled in free-flow mode', 409)
+    }
+
     const sourceParticipant = room.participants.get(identity)
     if (!sourceParticipant) {
       throw createError('Participant not found', 404)
@@ -241,6 +295,18 @@ export class RoomStore {
     }
   }
 
+  getFreeFlowRoutes(roomId) {
+    const room = this.requireRoom(roomId)
+
+    return Array.from(room.participants.values())
+      .map((participant) => ({
+        sourceIdentity: participant.identity,
+        sourceLanguage: participant.languageCode,
+        targetLanguages: getTargetLanguagesForParticipant(room, participant),
+      }))
+      .filter((route) => route.targetLanguages.length > 0)
+  }
+
   cleanupExpired() {
     const expiredRoomIds = []
     const now = this.now()
@@ -262,6 +328,7 @@ export class RoomStore {
       updatedAt: room.updatedAt,
       expiresAt: room.expiresAt,
       participants: serializeParticipants(room),
+      conversationMode: room.conversationMode || CONVERSATION_MODE_FLOOR,
       floor: room.floor,
       bridges: bridgeStatuses,
     }

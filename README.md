@@ -6,9 +6,11 @@ Participants choose the language they speak and hear. The first user starts a
 call and joins immediately; users opening the shared link choose their language
 and join the same room.
 
-Only one participant can speak at a time using a tap-to-claim floor control.
+Calls can run in either tap-to-speak mode, where only one participant can hold
+the speaking floor at a time, or free-flow mode, where participants toggle their
+own microphones on and speak directly.
 
-Firebase Hosting serves the Vite React app. API requests under `/api/**` are handled by a Cloud Run Node.js backend that manages rooms, LiveKit tokens, turn locking, and Gemini Live API translation bridges.
+Firebase Hosting serves the Vite React app. API requests under `/api/**` are handled by a Cloud Run Node.js backend that manages rooms, LiveKit tokens, conversation mode, turn locking, and Gemini Live API translation bridges.
 
 The frontend is installable as a Progressive Web App. It includes a web app manifest, app icons, and a service worker that caches the app shell and static assets. Calls and translation still require a live network connection because `/api/**`, LiveKit, and Gemini traffic are never served from cache.
 
@@ -80,12 +82,16 @@ Use two browser profiles or two different browsers on the same machine.
 10. Confirm the second participant hears translated audio in their selected language.
 11. In the second window, press the speak button, speak, then press `Done`.
 12. Confirm the first participant hears translated audio in their selected language.
+13. Switch the conversation mode to `Free flow`.
+14. Turn the microphone on in both windows and confirm either participant can speak without claiming the floor.
+15. Switch back to `Tap to speak` and confirm microphones are turned off until a participant presses `Speak`.
 
 Expected behavior:
 
 - No camera permission is requested.
-- Microphone is enabled only while the active participant has the floor.
-- The other participant cannot speak until the current participant presses `Done`.
+- In tap-to-speak mode, the microphone is enabled only while the active participant has the floor.
+- In tap-to-speak mode, the other participant cannot speak until the current participant presses `Done`.
+- In free-flow mode, each participant controls their own microphone and no floor is claimed.
 - Transcript items appear when Gemini returns transcription events.
 
 For two physical devices, use the deployed Firebase Hosting HTTPS URL. Browser microphone access usually will not work from `http://<LAN-IP>:5173`.
@@ -107,6 +113,7 @@ npm run check        # lint + server tests + build
 - `POST /api/rooms` creates a room.
 - `GET /api/rooms/:roomId` returns room state.
 - `POST /api/rooms/:roomId/token` creates a LiveKit participant token.
+- `POST /api/rooms/:roomId/mode` switches `conversationMode` between `floor` and `freeFlow`.
 - `POST /api/rooms/:roomId/turn/start` claims the speaking floor.
 - `POST /api/rooms/:roomId/turn/end` releases the floor and sends Gemini `audioStreamEnd`.
 - `POST /api/rooms/:roomId/leave` removes a participant from in-memory room state.
@@ -119,8 +126,9 @@ Room state is in memory for v1, so deploy the backend as a single warm Cloud Run
 - When one participant speaks, the backend starts Gemini translation bridges for
   selected languages used by participants on the other side of the conversation.
 - Each bridge streams PCM audio to `gemini-3.5-live-translate-preview` with its `targetLanguageCode`.
-- Translated audio is published back to LiveKit as `translator-<language-code>`.
-- Participants subscribe to the translator track that matches their selected language.
+- In tap-to-speak mode, translated audio is published back to LiveKit as `translator-<language-code>`.
+- In free-flow mode, translated audio is published back as `translator-<source-identity>-<language-code>` so overlapping speakers do not replace each other's translator tracks.
+- Participants subscribe to translator tracks that match their selected language and ignore tracks sourced from themselves.
 
 ## UI Translations
 
@@ -182,4 +190,5 @@ firebase deploy --only hosting
 
 - Access requires the shared numeric `APP_PIN`; there is no per-user sign-in. The PIN is enforced server-side on every API request and remembered in the browser after the first entry.
 - Long calls depend on one Cloud Run process keeping LiveKit and Gemini WebSocket bridges alive.
+- Free-flow mode uses more LiveKit and Gemini bridge connections because bridges are maintained per speaker and target language.
 - Use headphones during testing to reduce echo and accidental translated feedback.

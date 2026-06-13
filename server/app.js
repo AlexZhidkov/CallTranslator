@@ -6,7 +6,11 @@ import {
 } from '../shared/supported-languages.js'
 import { BridgeManager } from './bridge-manager.js'
 import { getGeminiConfig, getLiveKitConfig } from './config.js'
-import { RoomStore } from './room-store.js'
+import {
+  CONVERSATION_MODE_FLOOR,
+  CONVERSATION_MODE_FREE_FLOW,
+  RoomStore,
+} from './room-store.js'
 import { createParticipantToken } from './token-service.js'
 
 function asyncRoute(handler) {
@@ -53,9 +57,46 @@ export function createApp({
   appPin = process.env.APP_PIN,
 } = {}) {
   const app = express()
+  let activeBridgeManager = bridgeManager
 
   app.set('trust proxy', true)
   app.use(express.json({ limit: '1mb' }))
+
+  function ensureBridgeManager() {
+    if (!activeBridgeManager) {
+      activeBridgeManager = new BridgeManager({
+        livekitConfig: getLiveKitConfig(),
+        geminiConfig: getGeminiConfig(),
+      })
+    }
+
+    return activeBridgeManager
+  }
+
+  function getBridgeStatuses(roomId) {
+    return activeBridgeManager?.getStatuses(roomId)
+  }
+
+  function toPublicRoom(room) {
+    return roomStore.toPublicRoom(room, getBridgeStatuses(room.roomId))
+  }
+
+  async function syncFreeFlowBridges(room) {
+    if (
+      (room.conversationMode || CONVERSATION_MODE_FLOOR) !==
+      CONVERSATION_MODE_FREE_FLOW
+    ) {
+      return
+    }
+
+    const routes = roomStore.getFreeFlowRoutes(room.roomId)
+    if (!routes.length && !activeBridgeManager) return
+
+    await ensureBridgeManager().syncFreeFlow({
+      roomId: room.roomId,
+      routes,
+    })
+  }
 
   app.get('/api/health', (req, res) => {
     res.json({ ok: true })
@@ -113,10 +154,7 @@ export function createApp({
   app.get('/api/rooms/:roomId', (req, res) => {
     const room = roomStore.requireRoom(req.params.roomId)
     res.json({
-      room: roomStore.toPublicRoom(
-        room,
-        bridgeManager?.getStatuses(req.params.roomId),
-      ),
+      room: toPublicRoom(room),
     })
   })
 
@@ -137,10 +175,43 @@ export function createApp({
         languageCode: language.code,
       })
 
+      await syncFreeFlowBridges(room)
+
       res.json({
         ...token,
         participant,
-        room: roomStore.toPublicRoom(room),
+        room: toPublicRoom(room),
+      })
+    }),
+  )
+
+  app.post(
+    '/api/rooms/:roomId/mode',
+    asyncRoute(async (req, res) => {
+      const { conversationMode } = req.body || {}
+      const result = roomStore.setConversationMode(
+        req.params.roomId,
+        conversationMode,
+      )
+      const room = result.room
+
+      if (result.endedFloor) {
+        activeBridgeManager?.endTurn({
+          roomId: room.roomId,
+          targetLanguages: result.endedFloor.targetLanguages,
+        })
+      }
+
+      if (result.conversationMode === CONVERSATION_MODE_FREE_FLOW) {
+        await activeBridgeManager?.stopFloor(room.roomId)
+        await syncFreeFlowBridges(room)
+      } else {
+        await activeBridgeManager?.stopFreeFlow(room.roomId)
+      }
+
+      res.json({
+        conversationMode: room.conversationMode,
+        room: toPublicRoom(room),
       })
     }),
   )
@@ -161,24 +232,13 @@ export function createApp({
         res.status(409).json({
           granted: false,
           floor: result.floor,
-          room: roomStore.toPublicRoom(
-            room,
-            bridgeManager?.getStatuses(req.params.roomId),
-          ),
+          room: toPublicRoom(room),
         })
         return
       }
 
-      let manager = bridgeManager
       if (result.floor.targetLanguages.length) {
-        manager =
-          bridgeManager ||
-          new BridgeManager({
-            livekitConfig: getLiveKitConfig(),
-            geminiConfig: getGeminiConfig(),
-          })
-
-        await manager.startTurn({
+        await ensureBridgeManager().startTurn({
           roomId: room.roomId,
           sourceIdentity: identity,
           sourceLanguage: result.floor.sourceLanguage,
@@ -189,10 +249,7 @@ export function createApp({
       res.json({
         granted: true,
         floor: result.floor,
-        room: roomStore.toPublicRoom(
-          room,
-          manager?.getStatuses(room.roomId),
-        ),
+        room: toPublicRoom(room),
       })
     }),
   )
@@ -203,7 +260,7 @@ export function createApp({
     const room = roomStore.requireRoom(req.params.roomId)
 
     if (result.ended) {
-      bridgeManager?.endTurn({
+      activeBridgeManager?.endTurn({
         roomId: room.roomId,
         targetLanguages: result.floor.targetLanguages,
       })
@@ -211,30 +268,37 @@ export function createApp({
 
     res.status(result.ended ? 200 : 409).json({
       ...result,
-      room: roomStore.toPublicRoom(
-        room,
-        bridgeManager?.getStatuses(req.params.roomId),
-      ),
+      room: toPublicRoom(room),
     })
   })
 
-  app.post('/api/rooms/:roomId/leave', (req, res) => {
+  app.post('/api/rooms/:roomId/leave', asyncRoute(async (req, res) => {
     const { identity } = req.body || {}
+    const existingRoom = roomStore.getRoom(req.params.roomId)
+    const endedFloor =
+      existingRoom?.floor?.identity === identity ? existingRoom.floor : null
+
     if (identity) {
       roomStore.removeParticipant(req.params.roomId, identity)
     }
 
+    if (endedFloor) {
+      activeBridgeManager?.endTurn({
+        roomId: req.params.roomId,
+        targetLanguages: endedFloor.targetLanguages,
+      })
+    }
+
     const room = roomStore.getRoom(req.params.roomId)
+    if (room?.conversationMode === CONVERSATION_MODE_FREE_FLOW) {
+      await syncFreeFlowBridges(room)
+    }
+
     res.json({
       ok: true,
-      room: room
-        ? roomStore.toPublicRoom(
-            room,
-            bridgeManager?.getStatuses(req.params.roomId),
-          )
-        : null,
+      room: room ? toPublicRoom(room) : null,
     })
-  })
+  }))
 
   app.use((error, req, res, next) => {
     if (res.headersSent) {

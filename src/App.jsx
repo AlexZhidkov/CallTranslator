@@ -38,6 +38,8 @@ const AUDIO_CAPTURE_OPTIONS = {
 const PIN_STORAGE_KEY = "call-translator-pin";
 const ROOM_NOT_FOUND_MESSAGE = "Room not found";
 const TRANSCRIPT_LIMIT = 8;
+const CONVERSATION_MODE_FLOOR = "floor";
+const CONVERSATION_MODE_FREE_FLOW = "freeFlow";
 
 function getStoredPin() {
   try {
@@ -89,6 +91,40 @@ function getInitialLanguageCode() {
 
 function getTranslatorIdentity(languageCode) {
   return `translator-${languageCode}`;
+}
+
+function parseParticipantMetadata(metadata) {
+  if (typeof metadata !== "string" || !metadata) return null;
+
+  try {
+    return JSON.parse(metadata);
+  } catch {
+    return null;
+  }
+}
+
+function isTranslatorForLanguage(remoteParticipant, languageCode, localIdentity) {
+  const identity = remoteParticipant?.identity || "";
+  const metadata = parseParticipantMetadata(remoteParticipant?.metadata);
+
+  if (metadata?.role === "translator") {
+    return (
+      metadata.targetLanguage === languageCode &&
+      metadata.sourceIdentity !== localIdentity
+    );
+  }
+
+  if (identity === getTranslatorIdentity(languageCode)) return true;
+
+  const localTranslatorPrefix = localIdentity
+    ? `translator-${localIdentity}-`
+    : "";
+
+  return (
+    identity.startsWith("translator-") &&
+    identity.endsWith(`-${languageCode}`) &&
+    (!localTranslatorPrefix || !identity.startsWith(localTranslatorPrefix))
+  );
 }
 
 function upsertTranscript(current, nextItem) {
@@ -184,6 +220,8 @@ function App() {
   const [accessState, setAccessState] = useState("checking");
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
+  const [micEnabled, setMicEnabled] = useState(false);
+  const [modeChangePending, setModeChangePending] = useState(false);
 
   const roomRef = useRef(null);
   const participantRef = useRef(null);
@@ -199,7 +237,10 @@ function App() {
     () => createTranslator(selectedLanguage.code),
     [selectedLanguage.code],
   );
-  const floor = roomInfo?.floor || activeTurn;
+  const conversationMode =
+    roomInfo?.conversationMode || CONVERSATION_MODE_FLOOR;
+  const isFreeFlowMode = conversationMode === CONVERSATION_MODE_FREE_FLOW;
+  const floor = isFreeFlowMode ? null : roomInfo?.floor || activeTurn;
   const isJoined = Boolean(participant);
   const roomParticipants = Array.isArray(roomInfo?.participants)
     ? roomInfo.participants
@@ -212,7 +253,17 @@ function App() {
   const hasConversationPartner = otherParticipants.length > 0;
   const isMyTurn = Boolean(floor && participant?.identity === floor.identity);
   const isSomeoneSpeaking = Boolean(floor);
-  const canStartTurn = isJoined && hasConversationPartner && !isSomeoneSpeaking;
+  const canStartTurn =
+    !isFreeFlowMode &&
+    isJoined &&
+    hasConversationPartner &&
+    !isSomeoneSpeaking &&
+    !modeChangePending;
+  const canToggleFreeFlowMic =
+    isFreeFlowMode &&
+    isJoined &&
+    hasConversationPartner &&
+    !modeChangePending;
   const canShareJoinUrl =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
   const shareButtonLabel = copied
@@ -220,9 +271,13 @@ function App() {
     : canShareJoinUrl
       ? t("call.share")
       : t("call.copyLink");
-  const speakButtonLabel = isMyTurn
-    ? t("call.done")
-    : t("call.speakLanguage", { language: selectedLanguage.name });
+  const speakButtonLabel = isFreeFlowMode
+    ? micEnabled
+      ? t("call.mute")
+      : t("call.unmute")
+    : isMyTurn
+      ? t("call.done")
+      : t("call.speakLanguage", { language: selectedLanguage.name });
   const currentJoinUrl = useMemo(() => {
     if (!roomId) return "";
     const url = new URL(window.location.href);
@@ -271,6 +326,8 @@ function App() {
     setCopied(false);
     setError("");
     setCanPlayAudio(true);
+    setMicEnabled(false);
+    setModeChangePending(false);
   }, []);
 
   useEffect(() => {
@@ -362,10 +419,16 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!participant || floor) return;
+    if (!participant || isFreeFlowMode || floor) return;
 
-    roomRef.current?.localParticipant?.setMicrophoneEnabled(false);
-  }, [floor, participant]);
+    const disableMicrophone =
+      roomRef.current?.localParticipant?.setMicrophoneEnabled(false);
+    disableMicrophone
+      ?.then(() => setMicEnabled(false))
+      .catch((micError) =>
+        console.warn("Failed to disable inactive microphone", micError),
+      );
+  }, [floor, isFreeFlowMode, participant]);
 
   async function submitPin(event) {
     event.preventDefault();
@@ -419,7 +482,11 @@ function App() {
   function attachTranslatedTrack(track, publication, remoteParticipant) {
     if (
       track.kind !== Track.Kind.Audio ||
-      remoteParticipant.identity !== getTranslatorIdentity(languageRef.current)
+      !isTranslatorForLanguage(
+        remoteParticipant,
+        languageRef.current,
+        participantRef.current?.identity,
+      )
     ) {
       return;
     }
@@ -500,6 +567,7 @@ function App() {
       setConnectionState("disconnected");
     });
 
+    participantRef.current = tokenData.participant;
     await livekitRoom.connect(tokenData.livekitUrl, tokenData.token, {
       autoSubscribe: true,
     });
@@ -510,6 +578,7 @@ function App() {
     setParticipant(tokenData.participant);
     setRoomInfo(tokenData.room);
     setConnectionState("connected");
+    setMicEnabled(false);
   }
 
   async function startCall() {
@@ -588,6 +657,7 @@ function App() {
           true,
           AUDIO_CAPTURE_OPTIONS,
         );
+        setMicEnabled(true);
       } catch (micError) {
         await apiFetch(`/api/rooms/${roomId}/turn/end`, {
           method: "POST",
@@ -597,6 +667,7 @@ function App() {
           }),
         }).catch(() => {});
         setActiveTurn(null);
+        setMicEnabled(false);
         throw micError;
       }
     } catch (requestError) {
@@ -617,6 +688,7 @@ function App() {
 
     setError("");
     await roomRef.current?.localParticipant?.setMicrophoneEnabled(false);
+    setMicEnabled(false);
 
     try {
       const data = await apiFetch(`/api/rooms/${roomId}/turn/end`, {
@@ -668,15 +740,86 @@ function App() {
     setSpeechWarning(false);
     setActiveTurn(null);
     setCanPlayAudio(true);
+    setMicEnabled(false);
   }
 
   async function handleSpeakButton() {
+    if (isFreeFlowMode) {
+      await toggleFreeFlowMicrophone();
+      return;
+    }
+
     if (isMyTurn) {
       await endTurn();
       return;
     }
 
     await startTurn();
+  }
+
+  async function changeConversationMode(nextMode) {
+    if (
+      !roomId ||
+      !participant ||
+      nextMode === conversationMode ||
+      modeChangePending
+    ) {
+      return;
+    }
+
+    setError("");
+    setSpeechWarning(false);
+    setModeChangePending(true);
+
+    try {
+      const data = await apiFetch(`/api/rooms/${roomId}/mode`, {
+        method: "POST",
+        body: JSON.stringify({
+          conversationMode: nextMode,
+        }),
+      });
+
+      setRoomInfo(data.room);
+      setActiveTurn(null);
+
+      if (nextMode === CONVERSATION_MODE_FLOOR) {
+        await roomRef.current?.localParticipant?.setMicrophoneEnabled(false);
+        setMicEnabled(false);
+      }
+    } catch (requestError) {
+      if (isRoomNotFoundError(requestError)) {
+        await resetToStartPage();
+        return;
+      }
+
+      if (requestError.data?.room) {
+        setRoomInfo(requestError.data.room);
+      }
+      setError(requestError.message);
+    } finally {
+      setModeChangePending(false);
+    }
+  }
+
+  async function toggleFreeFlowMicrophone() {
+    if (!canToggleFreeFlowMic || !roomRef.current) return;
+
+    const nextMicEnabled = !micEnabled;
+    setError("");
+    setSpeechWarning(false);
+
+    try {
+      await roomRef.current.localParticipant.setMicrophoneEnabled(
+        nextMicEnabled,
+        AUDIO_CAPTURE_OPTIONS,
+      );
+      setMicEnabled(nextMicEnabled);
+    } catch (micError) {
+      if (nextMicEnabled) {
+        setMicEnabled(false);
+      }
+      setError(micError.message);
+    }
   }
 
   return (
@@ -827,13 +970,51 @@ function App() {
                     : t("call.waitingForParticipant")}
                 </span>
               </div>
+              <div
+                className="mode-switch"
+                role="group"
+                aria-label={t("call.modeLabel")}
+              >
+                <button
+                  type="button"
+                  className={!isFreeFlowMode ? "selected" : ""}
+                  aria-pressed={!isFreeFlowMode}
+                  onClick={() => changeConversationMode(CONVERSATION_MODE_FLOOR)}
+                  disabled={modeChangePending}
+                >
+                  <Lock size={18} />
+                  <span>{t("call.modeFloor")}</span>
+                </button>
+                <button
+                  type="button"
+                  className={isFreeFlowMode ? "selected" : ""}
+                  aria-pressed={isFreeFlowMode}
+                  onClick={() =>
+                    changeConversationMode(CONVERSATION_MODE_FREE_FLOW)
+                  }
+                  disabled={modeChangePending}
+                >
+                  <Mic size={18} />
+                  <span>{t("call.modeFreeFlow")}</span>
+                </button>
+              </div>
               <button
                 type="button"
-                className={`talk-button ${isMyTurn ? "speaking" : ""}`}
+                className={`talk-button ${
+                  (isFreeFlowMode ? micEnabled : isMyTurn) ? "speaking" : ""
+                }`}
                 onClick={handleSpeakButton}
-                disabled={!isMyTurn && !canStartTurn}
+                disabled={
+                  isFreeFlowMode
+                    ? !canToggleFreeFlowMic
+                    : !isMyTurn && !canStartTurn
+                }
               >
-                {isMyTurn ? <MicOff size={34} /> : <Mic size={34} />}
+                {(isFreeFlowMode ? micEnabled : isMyTurn) ? (
+                  <MicOff size={34} />
+                ) : (
+                  <Mic size={34} />
+                )}
                 <span>{speakButtonLabel}</span>
               </button>
 
@@ -841,6 +1022,13 @@ function App() {
                 <p className="floor-note">
                   <Headphones size={18} />
                   {t("call.shareAndWait")}
+                </p>
+              ) : isFreeFlowMode ? (
+                <p className="floor-note">
+                  <Headphones size={18} />
+                  {micEnabled
+                    ? t("call.freeFlowMicOn")
+                    : t("call.freeFlowMicOff")}
                 </p>
               ) : floor && !isMyTurn ? (
                 <p className="floor-note">

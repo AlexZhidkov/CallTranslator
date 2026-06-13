@@ -20,6 +20,8 @@ const GEMINI_WS_URL =
 
 export class TranslationBridge {
   constructor({
+    mode = 'floor',
+    identity,
     roomId,
     sourceIdentity,
     sourceLanguage,
@@ -28,12 +30,13 @@ export class TranslationBridge {
     livekitConfig,
     geminiConfig,
   }) {
+    this.mode = mode
     this.roomId = roomId
     this.sourceIdentity = sourceIdentity
     this.sourceLanguage = sourceLanguage
     this.targetLanguage = targetLanguage
     this.publishSourceTranscription = publishSourceTranscription
-    this.identity = `translator-${targetLanguage}`
+    this.identity = identity || `translator-${targetLanguage}`
     this.livekitConfig = livekitConfig
     this.geminiConfig = geminiConfig
 
@@ -92,12 +95,20 @@ export class TranslationBridge {
   }
 
   async joinRoom() {
+    const metadata = JSON.stringify({
+      role: 'translator',
+      mode: this.mode,
+      sourceIdentity: this.sourceIdentity,
+      sourceLanguage: this.sourceLanguage,
+      targetLanguage: this.targetLanguage,
+    })
     const token = new AccessToken(
       this.livekitConfig.apiKey,
       this.livekitConfig.apiSecret,
       {
         identity: this.identity,
         name: `Translator ${this.targetLanguage.toUpperCase()}`,
+        metadata,
         ttl: '4h',
       },
     )
@@ -121,8 +132,12 @@ export class TranslationBridge {
     })
 
     this.audioSource = new AudioSource(24000, 1)
+    const trackName =
+      this.mode === 'freeFlow'
+        ? `translated-audio-${this.sourceIdentity}-${this.targetLanguage}`
+        : `translated-audio-${this.targetLanguage}`
     this.localTrack = LocalAudioTrack.createAudioTrack(
-      `translated-audio-${this.targetLanguage}`,
+      trackName,
       this.audioSource,
     )
 
@@ -263,11 +278,18 @@ export class TranslationBridge {
     }
 
     if (serverContent?.outputTranscription?.text) {
+      const segmentId = [
+        this.sourceIdentity,
+        this.targetLanguage,
+        'output',
+        this.transcriptionSegmentId,
+      ].join('-')
+
       this.publishTranscriptionSafely({
         text: serverContent.outputTranscription.text,
         language:
           this.targetLanguage || serverContent.outputTranscription.languageCode,
-        segmentId: `${this.targetLanguage}-output-${this.transcriptionSegmentId}`,
+        segmentId,
         final: Boolean(serverContent.turnComplete),
         transcriptSource: 'output',
       })
