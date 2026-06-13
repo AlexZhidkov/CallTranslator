@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -31,6 +31,7 @@ const AUDIO_CAPTURE_OPTIONS = {
 };
 
 const PIN_STORAGE_KEY = "call-translator-pin";
+const ROOM_NOT_FOUND_MESSAGE = "Room not found";
 
 function getStoredPin() {
   try {
@@ -58,6 +59,14 @@ function clearStoredPin() {
 
 function getRoomIdFromUrl() {
   return new URLSearchParams(window.location.search).get("room") || "";
+}
+
+function isRoomNotFoundError(error) {
+  return (
+    error?.status === 404 &&
+    (error.message === ROOM_NOT_FOUND_MESSAGE ||
+      error.data?.error === ROOM_NOT_FOUND_MESSAGE)
+  );
 }
 
 function getBrowserLanguagePreferences() {
@@ -174,6 +183,31 @@ function App() {
     participantRef.current = participant;
   }, [participant]);
 
+  const resetToStartPage = useCallback(async () => {
+    const currentRoom = roomRef.current;
+    roomRef.current = null;
+    audioSinkRef.current?.replaceChildren();
+
+    try {
+      await currentRoom?.disconnect();
+    } catch (disconnectError) {
+      console.warn("Failed to disconnect from missing room", disconnectError);
+    }
+
+    window.history.replaceState({}, "", window.location.pathname);
+
+    setRoomId("");
+    setRoomInfo(null);
+    setParticipant(null);
+    setConnectionState("idle");
+    setActiveTurn(null);
+    setTranscripts([]);
+    setSpeechWarning(false);
+    setCopied(false);
+    setError("");
+    setCanPlayAudio(true);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -219,6 +253,11 @@ function App() {
         }
       } catch (requestError) {
         if (!cancelled) {
+          if (isRoomNotFoundError(requestError)) {
+            await resetToStartPage();
+            return;
+          }
+
           setError(requestError.message);
         }
       }
@@ -230,7 +269,7 @@ function App() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [roomId, accessState]);
+  }, [roomId, accessState, resetToStartPage]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -414,6 +453,11 @@ function App() {
       url.searchParams.set("room", data.roomId);
       window.history.pushState({}, "", url);
     } catch (requestError) {
+      if (isRoomNotFoundError(requestError)) {
+        await resetToStartPage();
+        return;
+      }
+
       setConnectionState("idle");
       setError(requestError.message);
     }
@@ -428,6 +472,11 @@ function App() {
     try {
       await joinLiveKitRoom(roomId);
     } catch (requestError) {
+      if (isRoomNotFoundError(requestError)) {
+        await resetToStartPage();
+        return;
+      }
+
       setConnectionState("idle");
       setError(requestError.message);
     }
@@ -476,6 +525,11 @@ function App() {
         throw micError;
       }
     } catch (requestError) {
+      if (isRoomNotFoundError(requestError)) {
+        await resetToStartPage();
+        return;
+      }
+
       if (requestError.status === 409 && requestError.data?.room) {
         setRoomInfo(requestError.data.room);
       }
@@ -501,6 +555,11 @@ function App() {
       setRoomInfo(data.room);
       setActiveTurn(null);
     } catch (requestError) {
+      if (isRoomNotFoundError(requestError)) {
+        await resetToStartPage();
+        return;
+      }
+
       if (requestError.data?.room) {
         setRoomInfo(requestError.data.room);
       }
