@@ -201,9 +201,18 @@ function App() {
   );
   const floor = roomInfo?.floor || activeTurn;
   const isJoined = Boolean(participant);
+  const roomParticipants = Array.isArray(roomInfo?.participants)
+    ? roomInfo.participants
+    : [];
+  const otherParticipants = participant
+    ? roomParticipants.filter(
+        (roomParticipant) => roomParticipant.identity !== participant.identity,
+      )
+    : [];
+  const hasConversationPartner = otherParticipants.length > 0;
   const isMyTurn = Boolean(floor && participant?.identity === floor.identity);
   const isSomeoneSpeaking = Boolean(floor);
-  const canStartTurn = isJoined && !isSomeoneSpeaking;
+  const canStartTurn = isJoined && hasConversationPartner && !isSomeoneSpeaking;
   const canShareJoinUrl =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
   const shareButtonLabel = copied
@@ -800,6 +809,24 @@ function App() {
                   {t("call.enableSound")}
                 </button>
               ) : null}
+              <div
+                className={`participant-status ${
+                  hasConversationPartner ? "ready" : "waiting"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                {hasConversationPartner ? (
+                  <Check size={20} />
+                ) : (
+                  <Headphones size={20} />
+                )}
+                <span>
+                  {hasConversationPartner
+                    ? t("call.readyForConversation")
+                    : t("call.waitingForParticipant")}
+                </span>
+              </div>
               <button
                 type="button"
                 className={`talk-button ${isMyTurn ? "speaking" : ""}`}
@@ -810,7 +837,12 @@ function App() {
                 <span>{speakButtonLabel}</span>
               </button>
 
-              {floor && !isMyTurn ? (
+              {!hasConversationPartner ? (
+                <p className="floor-note">
+                  <Headphones size={18} />
+                  {t("call.shareAndWait")}
+                </p>
+              ) : floor && !isMyTurn ? (
                 <p className="floor-note">
                   <Lock size={18} />
                   {t("call.someoneSpeaking")}
