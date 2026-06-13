@@ -334,10 +334,12 @@ button {
   margin: 18px 0 0;
   padding: 0;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .transcript-panel li {
+  width: min(88%, 760px);
+  border: 1px solid var(--border);
   border-left: 4px solid var(--accent);
   background: var(--panel);
   border-radius: 7px;
@@ -348,15 +350,49 @@ button {
 }
 
 .transcript-panel li.mine {
-  border-left-color: var(--accent);
+  justify-self: end;
+  border-left-width: 1px;
+  border-right: 4px solid var(--accent);
+  background: var(--accent-bg);
 }
 
 .transcript-panel li.theirs {
+  justify-self: start;
+  border-color: var(--success-border);
   border-left-color: var(--success);
+  background: var(--success-bg);
 }
 
 .transcript-panel li.interim {
   color: var(--muted);
+}
+
+.transcript-meta {
+  display: flex;
+}
+
+.transcript-panel li.mine .transcript-meta {
+  justify-content: flex-end;
+}
+
+.transcript-speaker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 9px;
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.transcript-panel li.mine .transcript-speaker {
+  background: var(--accent);
+}
+
+.transcript-panel li.theirs .transcript-speaker {
+  background: var(--success);
 }
 
 .transcript-panel li p {
@@ -397,5 +433,9 @@ button {
   .talk-button {
     min-height: 132px;
     font-size: 21px;
+  }
+
+  .transcript-panel li {
+    width: 94%;
   }
 }

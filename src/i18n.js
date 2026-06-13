@@ -52,7 +52,6 @@ export const UI_TRANSLATIONS = {
       sectionLabel: "Transcripts",
       title: "Transcript",
       empty: "Translated speech will appear here.",
-      speaker: "Speaker",
       you: "You",
     },
   },
