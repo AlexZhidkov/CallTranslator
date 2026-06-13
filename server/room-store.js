@@ -4,32 +4,11 @@ import {
   getSupportedLanguageByCode,
 } from '../shared/supported-languages.js'
 
-export const SIDES = {
-  parents: {
-    id: 'parents',
-    label: 'Parents',
-    labelRu: 'Родители',
-  },
-  grandchildren: {
-    id: 'grandchildren',
-    label: 'Grandchildren',
-    labelRu: 'Внуки',
-  },
-}
-
-const SIDE_IDS = Object.keys(SIDES)
+const CONVERSATION_SIDE_COUNT = 2
 const DEFAULT_TTL_MS = 4 * 60 * 60 * 1000
 
 export function createId(byteLength = 12) {
   return randomBytes(byteLength).toString('base64url')
-}
-
-function requireSide(side) {
-  if (!SIDES[side]) {
-    const error = new Error('Invalid side')
-    error.statusCode = 400
-    throw error
-  }
 }
 
 function requireSupportedParticipantLanguage(languageCode) {
@@ -46,41 +25,62 @@ function requireSupportedParticipantLanguage(languageCode) {
   return language
 }
 
-function getTargetLanguagesForSide(room, speakingSide) {
+function createError(message, statusCode) {
+  const error = new Error(message)
+  error.statusCode = statusCode
+  return error
+}
+
+function getNextParticipantSideIndex(room) {
+  const sideCounts = Array(CONVERSATION_SIDE_COUNT).fill(0)
+
+  for (const participant of room.participants.values()) {
+    sideCounts[participant.sideIndex] += 1
+  }
+
+  let selectedSideIndex = 0
+  for (let sideIndex = 1; sideIndex < CONVERSATION_SIDE_COUNT; sideIndex += 1) {
+    if (sideCounts[sideIndex] < sideCounts[selectedSideIndex]) {
+      selectedSideIndex = sideIndex
+    }
+  }
+
+  return selectedSideIndex
+}
+
+function getTargetLanguagesForSide(room, speakingSideIndex) {
   const targetLanguages = new Set()
 
-  for (const [side, participants] of Object.entries(room.participants)) {
-    if (side === speakingSide) continue
+  for (const participant of room.participants.values()) {
+    if (participant.sideIndex === speakingSideIndex) continue
 
-    for (const participant of participants.values()) {
-      targetLanguages.add(participant.languageCode)
-    }
+    targetLanguages.add(participant.languageCode)
   }
 
   return Array.from(targetLanguages)
 }
 
-function createParticipant(identity, side, displayName, languageCode) {
+function createParticipant(identity, sideIndex, languageCode) {
   const language = requireSupportedParticipantLanguage(languageCode)
+  const timestamp = new Date().toISOString()
 
   return {
     identity,
-    side,
-    displayName: displayName || SIDES[side].label,
+    sideIndex,
     languageCode: language.code,
     languageName: language.name,
-    joinedAt: new Date().toISOString(),
-    lastSeenAt: new Date().toISOString(),
+    joinedAt: timestamp,
+    lastSeenAt: timestamp,
   }
 }
 
+function toPublicParticipant(participant) {
+  const { sideIndex, ...publicParticipant } = participant
+  return publicParticipant
+}
+
 function serializeParticipants(room) {
-  return Object.fromEntries(
-    Object.entries(room.participants).map(([side, participants]) => [
-      side,
-      Array.from(participants.values()),
-    ]),
-  )
+  return Array.from(room.participants.values(), toPublicParticipant)
 }
 
 export class RoomStore {
@@ -102,10 +102,7 @@ export class RoomStore {
       createdAt: new Date(timestamp).toISOString(),
       updatedAt: new Date(timestamp).toISOString(),
       expiresAt: new Date(timestamp + this.ttlMs).toISOString(),
-      participants: {
-        parents: new Map(),
-        grandchildren: new Map(),
-      },
+      participants: new Map(),
       floor: null,
     }
 
@@ -141,55 +138,37 @@ export class RoomStore {
     room.expiresAt = new Date(timestamp + this.ttlMs).toISOString()
   }
 
-  getNextParticipantSide(roomId) {
-    const room = this.requireRoom(roomId)
-    let selectedSide = SIDE_IDS[0]
-    let selectedCount = room.participants[selectedSide].size
-
-    for (const side of SIDE_IDS.slice(1)) {
-      const count = room.participants[side].size
-      if (count < selectedCount) {
-        selectedSide = side
-        selectedCount = count
-      }
+  addParticipant(roomId, { identity, languageCode }) {
+    if (!identity) {
+      throw createError('Missing identity', 400)
     }
-
-    return selectedSide
-  }
-
-  addParticipant(roomId, { side, identity, displayName, languageCode }) {
-    requireSide(side)
 
     const room = this.requireRoom(roomId)
     const language = requireSupportedParticipantLanguage(languageCode)
-    const existing = room.participants[side].get(identity)
+    const existing = room.participants.get(identity)
     if (existing) {
       existing.lastSeenAt = new Date(this.now()).toISOString()
-      if (displayName) existing.displayName = displayName
       existing.languageCode = language.code
       existing.languageName = language.name
       this.touch(room)
-      return existing
+      return toPublicParticipant(existing)
     }
 
     const participant = createParticipant(
       identity,
-      side,
-      displayName,
+      getNextParticipantSideIndex(room),
       language.code,
     )
-    room.participants[side].set(identity, participant)
+    room.participants.set(identity, participant)
     this.touch(room)
-    return participant
+    return toPublicParticipant(participant)
   }
 
   removeParticipant(roomId, identity) {
     const room = this.getRoom(roomId)
     if (!room) return null
 
-    for (const participants of Object.values(room.participants)) {
-      participants.delete(identity)
-    }
+    room.participants.delete(identity)
 
     if (room.floor?.identity === identity) {
       room.floor = null
@@ -199,10 +178,13 @@ export class RoomStore {
     return room
   }
 
-  startTurn(roomId, { side, identity }) {
-    requireSide(side)
-
+  startTurn(roomId, { identity }) {
     const room = this.requireRoom(roomId)
+    const sourceParticipant = room.participants.get(identity)
+    if (!sourceParticipant) {
+      throw createError('Participant not found', 404)
+    }
+
     if (room.floor) {
       return {
         granted: false,
@@ -210,18 +192,15 @@ export class RoomStore {
       }
     }
 
-    const sourceParticipant = room.participants[side].get(identity)
-    const targetLanguages = getTargetLanguagesForSide(room, side)
+    const targetLanguages = getTargetLanguagesForSide(
+      room,
+      sourceParticipant.sideIndex,
+    )
     room.floor = {
       turnId: createId(10),
-      side,
       identity,
-      sourceLanguage: sourceParticipant?.languageCode || null,
-      targetLanguage: targetLanguages[0] || null,
+      sourceLanguage: sourceParticipant.languageCode,
       targetLanguages,
-      translatorIdentity: targetLanguages[0]
-        ? `translator-${targetLanguages[0]}`
-        : null,
       translatorIdentities: targetLanguages.map(
         (languageCode) => `translator-${languageCode}`,
       ),
@@ -283,10 +262,6 @@ export class RoomStore {
       updatedAt: room.updatedAt,
       expiresAt: room.expiresAt,
       participants: serializeParticipants(room),
-      participantCounts: {
-        parents: room.participants.parents.size,
-        grandchildren: room.participants.grandchildren.size,
-      },
       floor: room.floor,
       bridges: bridgeStatuses,
     }

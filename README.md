@@ -117,8 +117,7 @@ Room state is in memory for v1, so deploy the backend as a single warm Cloud Run
 
 - Each participant chooses a target language from the Live Translate supported-language list.
 - When one participant speaks, the backend starts Gemini translation bridges for
-  selected languages used by participants assigned to the other internal room
-  role.
+  selected languages used by participants on the other side of the conversation.
 - Each bridge streams PCM audio to `gemini-3.5-live-translate-preview` with its `targetLanguageCode`.
 - Translated audio is published back to LiveKit as `translator-<language-code>`.
 - Participants subscribe to the translator track that matches their selected language.

@@ -355,32 +355,7 @@ button {
   border-left-color: var(--success);
 }
 
-.transcript-panel li.speaker-parents {
-  border-left-color: var(--accent);
-}
-
-.transcript-panel li.speaker-grandchildren {
-  border-left-color: var(--success);
-}
-
 .transcript-panel li.interim {
-  color: var(--muted);
-}
-
-.transcript-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.transcript-speaker {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.transcript-panel li.interim .transcript-speaker {
   color: var(--muted);
 }
 

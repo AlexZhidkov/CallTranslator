@@ -91,19 +91,6 @@ function getTranslatorIdentity(languageCode) {
   return `translator-${languageCode}`;
 }
 
-function findRoomParticipant(roomInfo, identity) {
-  if (!identity) return null;
-
-  for (const participants of Object.values(roomInfo?.participants || {})) {
-    const match = participants.find(
-      (roomParticipant) => roomParticipant.identity === identity,
-    );
-    if (match) return match;
-  }
-
-  return null;
-}
-
 function upsertTranscript(current, nextItem) {
   const existingIndex = current.findIndex((item) => item.id === nextItem.id);
 
@@ -125,26 +112,12 @@ function upsertTranscript(current, nextItem) {
   return [merged, ...withoutExisting].slice(0, TRANSCRIPT_LIMIT);
 }
 
-function getTranscriptSpeakerLabel(item, roomInfo, participant, t) {
-  if (item.speakerIdentity === participant?.identity) {
-    return t("transcript.you");
-  }
-
-  const speaker = findRoomParticipant(roomInfo, item.speakerIdentity);
-  return speaker?.displayName || speaker?.identity || t("transcript.speaker");
-}
-
-function getTranscriptClassName(item, roomInfo, participant) {
+function getTranscriptClassName(item, participant) {
   const classes = [item.final ? "final" : "interim"];
-  const speaker = findRoomParticipant(roomInfo, item.speakerIdentity);
 
   classes.push(
     item.speakerIdentity === participant?.identity ? "mine" : "theirs",
   );
-
-  if (speaker?.side) {
-    classes.push(`speaker-${speaker.side}`);
-  }
 
   return classes.join(" ");
 }
@@ -594,7 +567,6 @@ function App() {
       const data = await apiFetch(`/api/rooms/${roomId}/turn/start`, {
         method: "POST",
         body: JSON.stringify({
-          side: participant.side,
           identity: participant.identity,
         }),
       });
@@ -882,11 +854,7 @@ function App() {
                   return (
                     <li
                       key={item.id}
-                      className={getTranscriptClassName(
-                        item,
-                        roomInfo,
-                        participant,
-                      )}
+                      className={getTranscriptClassName(item, participant)}
                     >
                       <p>{item.text}</p>
                     </li>

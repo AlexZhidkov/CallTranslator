@@ -123,23 +123,17 @@ export function createApp({
   app.post(
     '/api/rooms/:roomId/token',
     asyncRoute(async (req, res) => {
-      const { side, displayName, languageCode } = req.body || {}
+      const { languageCode } = req.body || {}
       const room = roomStore.requireRoom(req.params.roomId)
       const language = requireSupportedLanguage(languageCode)
-      const participantSide =
-        side || roomStore.getNextParticipantSide(room.roomId)
       const config = livekitConfig || getLiveKitConfig()
       const token = await createParticipantToken({
         roomId: room.roomId,
-        side: participantSide,
-        displayName,
         livekitConfig: config,
       })
 
       const participant = roomStore.addParticipant(room.roomId, {
-        side: participantSide,
         identity: token.identity,
-        displayName,
         languageCode: language.code,
       })
 
@@ -154,13 +148,13 @@ export function createApp({
   app.post(
     '/api/rooms/:roomId/turn/start',
     asyncRoute(async (req, res) => {
-      const { side, identity } = req.body || {}
+      const { identity } = req.body || {}
       if (!identity) {
         res.status(400).json({ error: 'Missing identity' })
         return
       }
 
-      const result = roomStore.startTurn(req.params.roomId, { side, identity })
+      const result = roomStore.startTurn(req.params.roomId, { identity })
       const room = roomStore.requireRoom(req.params.roomId)
 
       if (!result.granted) {
